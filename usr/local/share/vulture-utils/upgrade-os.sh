@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 
-TIME_START="$(date -Iseconds)"
-TIME_START_SAFE="$(date +%Y%m%d_%H%M%S)"
+TIME_START="$(date -u -Iseconds)"
+TIME_START_SAFE="$(date -u +%Y%m%d_%H%M%S)"
 . /usr/local/share/vulture-utils/common.sh
 
 ###########
@@ -54,9 +54,9 @@ download_system_update() {
         if [ ! -f "${temp_dir}/update.tar" ]; then
             # Store (-t) and keep (-T) downloads to ${temp_dir} for later use
             # Do not install update yet (-f)
-            /usr/sbin/hbsd-update -t "${temp_dir}" -T -f $options
+            output=$(/usr/sbin/hbsd-update -t "${temp_dir}" -T -f $options 2>&1 | tee /dev/tty)
         fi
-        if [ $? -ne 0 ] ; then return 1 ; fi
+        if [ $? -ne 0 ] || echo $output | grep "This system is already on the latest version"; then return 1 ; fi
     else
         error_and_exit "[!] Cannot upgrade FreeBSD systems, need HardenedBSD!"
     fi
@@ -106,7 +106,7 @@ initialize() {
         has_upgraded_kernel || exit 1
     fi
 
-    echo "[${TIME_START}+00:00] Beginning ${_action_str}"
+    echo "[${TIME_START}] Beginning ${_action_str}"
 
     trap finalize_early SIGINT
 
@@ -147,6 +147,7 @@ finalize() {
                 /sbin/bectl activate "${_snap_name}"
             else
                 /sbin/bectl destroy -Fo "${_snap_name}"
+                echo "[!] ${_snap_name} destroyed!"
             fi
         fi
     fi
@@ -164,7 +165,7 @@ finalize() {
     has_pending_BE
     has_upgraded_kernel
 
-    echo "[$(date +%Y-%m-%dT%H:%M:%S+00:00)] ${_action_str} finished!"
+    echo "[$(date -u -Iseconds)] ${_action_str} finished!"
     exit $err_code
 }
 
