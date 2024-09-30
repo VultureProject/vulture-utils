@@ -14,14 +14,14 @@ keep_temp_dir=0
 download_only=0
 use_dnssec=0
 clean_cache=0
-snapshot_system=0
+snapshot_system=1
 keep_previous_snap=2 # by default, only keep 2 snapshot versions: the current one, and the previous one
 upgrade_root=1
 jails=""
 ### Internal ###
-_action_str="OS upgrade"
-_need_maintenance_toggle=1
+_need_maintenance_toggle=0
 _snap_name="${SNAPSHOT_PREFIX}UPGRADE_${TIME_START_SAFE}"
+_action_str="OS upgrade (in new Boot Environment ${_snap_name})"
 _params=""
 
 #############
@@ -35,7 +35,8 @@ usage() {
     echo "	-V	set a custom system OS version (as specified by 'hbsd-update -v')"
     echo "	-c	clean tempdir at the end of the script (incompatible with -T and -D)"
     echo "	-d	use dnssec while downloading OS upgrades (disabled by default)"
-    echo "	-b	Use a Boot Environment to install updates, and activate it on success"
+    echo "	-b	Use a Boot Environment to install updates, and activate it on success (default)"
+    echo "	-B	Do NOT use a Boot Environment to install updates, but install them directly"
     echo "	-k <num>	Number of BEs to keep (default is 2)"
     echo "	-t <tmpdir>	temporary directory to use (default is /tmp/vulture_update/)"
     echo "	-r <strategy>	(non-interactive) resolve strategy to pass to hbsd-update script while upgrading system configuration files (see man etcupdate for more info, default is 'mf')"
@@ -181,7 +182,7 @@ finalize_early() {
 ####################
 # parse parameters #
 ####################
-while getopts 'hDTV:cdbk:t:r:' opt; do
+while getopts 'hDTV:cdbBk:t:r:' opt; do
     case "${opt}" in
         D)  download_only=1;
             keep_temp_dir=1;
@@ -198,7 +199,11 @@ while getopts 'hDTV:cdbk:t:r:' opt; do
             ;;
         b)  snapshot_system=1;
             _need_maintenance_toggle=0;
-            _action_str="${_action_str} (in new Boot Environment ${_snap_name})";
+            _action_str="OS upgrade (in new Boot Environment ${_snap_name})";
+            ;;
+        B)  snapshot_system=0;
+            _need_maintenance_toggle=1;
+            _action_str="OS upgrade";
             ;;
         k)  keep_previous_snap=${OPTARG};
             ;;
@@ -214,23 +219,30 @@ shift $((OPTIND-1))
 _params="$*"
 
 # Decide what OS to upgrade (system root, specific jails, only jails or everything)
-if [ "${_params}" = "all" ]; then
-    upgrade_root=1
-    jails="$(get_jail_list)"
-    _need_maintenance_toggle=1
-elif [ "${_params}" = "jails" ]; then
-    upgrade_root=0
-    jails="$(get_jail_list)"
-    _need_maintenance_toggle=1
-elif [ -n "${_params}" ]; then
-    upgrade_root=0
-    for param in ${_params}; do
-        if ! /usr/sbin/jls -j "${param}" > /dev/null 2>&1; then
-            error_and_exit "Jail ${param} not found, is it currently stopped?"
-        fi
-    done
-    jails="${_params}"
-    _need_maintenance_toggle=1
+if [ "${download_only}" -eq 0 ]; then
+    if [ "${_params}" = "all" ]; then
+        upgrade_root=1
+        jails="$(get_jail_list)"
+        _need_maintenance_toggle=1
+        _action_str="${_action_str} + all jails' base"
+    elif [ "${_params}" = "jails" ]; then
+        upgrade_root=0
+        jails="$(get_jail_list)"
+        _need_maintenance_toggle=1
+        _action_str="all jails' base upgrade"
+    elif [ -n "${_params}" ]; then
+        upgrade_root=0
+        _action_str="Jails"
+        for param in ${_params}; do
+            if ! /usr/sbin/jls -j "${param}" > /dev/null 2>&1; then
+                error_and_exit "Jail ${param} not found, is it currently stopped?"
+            fi
+            _action_str="${_action_str} ${param}"
+        done
+        _action_str="${_action_str} base upgrade"
+        jails="${_params}"
+        _need_maintenance_toggle=1
+    fi
 fi
 
 if [ $clean_cache -gt 0 ] && [ $keep_temp_dir -gt 0 ] || [ $clean_cache -gt 0 ] && [ $download_only -gt 0 ]; then
