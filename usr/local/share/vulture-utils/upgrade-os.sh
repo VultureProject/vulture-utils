@@ -255,7 +255,7 @@ fi
 
 initialize
 
-download_system_update "${temp_dir}" "${use_dnssec}" "${system_version}" || finalize 1 "Failed to download system upgrades"
+download_system_update || finalize 1 "Failed to download system upgrades"
 
 if [ $download_only -gt 0 ]; then
     # exit here, everything has been downloaded
