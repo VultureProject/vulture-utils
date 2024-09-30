@@ -66,9 +66,8 @@ download_system_update() {
         if [ ! -f "${temp_dir}/update.tar" ]; then
             # Store (-t) and keep (-T) downloads to ${temp_dir} for later use
             # Do not install update yet (-f)
-            /usr/sbin/hbsd-update -t "${temp_dir}" -T -f $_options
+            /usr/sbin/hbsd-update -t "${temp_dir}" -T -f $_options || error_and_exit "[!] Error while downloading upgrade!"
         fi
-        if [ $? -ne 0 ] ; then return 1 ; fi
     else
         error_and_exit "[!] Cannot upgrade FreeBSD systems, need HardenedBSD!"
     fi
@@ -101,11 +100,10 @@ update_system() {
         # Previous download should be present in the '{temp_dir}' folder already
         if [ -n "$resolve_strategy" ] ; then
             # echo resolve strategy to hbsd-update for non-interactive resolution of conflicts in /etc/ via etcupdate
-            /usr/bin/yes "$resolve_strategy" | /usr/sbin/hbsd-update -d -t "${temp_dir}" -T -D $_options
+            /usr/bin/yes "$resolve_strategy" | /usr/sbin/hbsd-update -d -t "${temp_dir}" -T -D $_options || error_and_exit "[!] Error while installing upgrade!"
         else
-            /usr/sbin/hbsd-update -d -t "${temp_dir}" -T -D $_options
+            /usr/sbin/hbsd-update -d -t "${temp_dir}" -T -D "$_options" || error_and_exit "[!] Error while installing upgrade!"
         fi
-        if [ $? -ne 0 ] ; then return 1 ; fi
     else
         error_and_exit "[!] Cannot upgrade FreeBSD systems, need HardenedBSD!"
     fi
