@@ -65,12 +65,30 @@ while getopts 'hASJHDTclr:' opt; do
 done
 shift $((OPTIND-1))
 
-trap finalize SIGINT
+trap finalize_early SIGINT
 
-finalize(){
+finalize() {
+    # set default in case err_code is not specified
+    err_code=$1
+    err_message=$2
+    # does not work with '${1:=0}' if $1 is not set...
+    err_code=${err_code:=0}
+
+    if [ -n "$err_message" ]; then
+        echo ""
+        error "[!] ${err_message}"
+        echo ""
+    fi
+
     if [ "${_need_restart}" -gt 0 ];then
         info "Dataset have planned rollbacks, restart machine to apply them!"
     fi
+
+    exit "$err_code"
+}
+
+finalize_early() {
+    finalize 1 "Stopped"
 }
 
 for _type in ${AVAILABLE_DATASET_TYPES}; do

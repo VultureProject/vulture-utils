@@ -58,14 +58,33 @@ while getopts 'hASJDHTlk:' opt; do
 done
 shift $((OPTIND-1))
 
-trap finalize SIGINT
+trap finalize_early SIGINT
 
-finalize(){
+finalize() {
+    # set default in case err_code is not specified
+    err_code=$1
+    err_message=$2
+    # does not work with '${1:=0}' if $1 is not set...
+    err_code=${err_code:=0}
+
+    if [ -n "$err_message" ]; then
+        echo ""
+        error "[!] ${err_message}"
+        echo ""
+    fi
+
     if [ "$_mongo_locked" -gt 0 ]; then
         exec_mongo "db.fsyncUnlock()" > /dev/null
         _mongo_locked=0
     fi
+
+    exit "$err_code"
 }
+
+finalize_early() {
+    finalize 1 "Stopped"
+}
+
 
 for _type in ${AVAILABLE_DATASET_TYPES}; do
     _type_datasets="$(eval 'echo "$'"$_type"'_DATASETS"')"
