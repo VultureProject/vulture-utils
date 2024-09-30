@@ -5,15 +5,11 @@
 #############
 # variables #
 #############
-rollback_SYSTEM=0
-rollback_JAIL=0
-rollback_DB=0
-rollback_HOMES=0
-rollback_TMPVAR=0
 clean_rollback_triggers=0
 list_rollbacks=0
 rollback_to=""
 _need_restart=0
+_rollback_datasets_list=""
 
 # 'usr' and 'var' are set to nomount, so they don't hold any data (data is held by the root dataset)
 
@@ -45,21 +41,17 @@ fi
 
 while getopts 'hASJHDTclr:' opt; do
     case "${opt}" in
-        A)  rollback_SYSTEM=1;
-            rollback_JAIL=1;
-            rollback_DB=1;
-            rollback_HOMES=1;
-            rollback_TMPVAR=1;
+        A)  _rollback_datasets_list="SYSTEM JAIL DB HOMES TMPVAR";
             ;;
-        S)  rollback_SYSTEM=1;
+        S)  _rollback_datasets_list="${_rollback_datasets_list} SYSTEM"
             ;;
-        J)  rollback_JAIL=1;
+        J)  _rollback_datasets_list="${_rollback_datasets_list} JAIL"
             ;;
-        D)  rollback_DB=1;
+        D)  _rollback_datasets_list="${_rollback_datasets_list} DB"
             ;;
-        H)  rollback_HOMES=1;
+        H)  _rollback_datasets_list="${_rollback_datasets_list} HOMES"
             ;;
-        T)  rollback_TMPVAR=1;
+        T)  _rollback_datasets_list="${_rollback_datasets_list} TMPVAR"
             ;;
         c)  clean_rollback_triggers=1;
             ;;
@@ -95,7 +87,7 @@ for _type in ${AVAILABLE_DATASET_TYPES}; do
     fi
 
     # Ignore datasets not explicitely selected from here
-    if [ "$(eval 'echo "$rollback_'"$_type"'"')" -lt 1 ]; then
+    if ! contains "${_rollback_datasets_list}" "${_type}"; then
         continue
     fi
 

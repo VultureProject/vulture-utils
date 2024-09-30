@@ -6,14 +6,10 @@
 # variables #
 #############
 snap_name="${SNAPSHOT_PREFIX}SNAP_$(date +%Y-%m-%dT%H:%M:%S)"
-snap_SYSTEM=0
-snap_JAIL=0
-snap_DB=0
-snap_HOMES=0
-snap_TMPVAR=0
 list_snaps=0
 keep_previous_snap=-1
 _mongo_locked=0
+_snapshot_datasets_list=""
 
 #############
 # functions #
@@ -40,21 +36,17 @@ fi
 
 while getopts 'hASJDHTlk:' opt; do
     case "${opt}" in
-        A)  snap_SYSTEM=1;
-            snap_JAIL=1;
-            snap_DB=1;
-            snap_HOMES=1;
-            snap_TMPVAR=1;
+        A)  _snapshot_datasets_list="SYSTEM JAIL DB HOMES TMPVAR";
             ;;
-        S)  snap_SYSTEM=1;
+        S)  _snapshot_datasets_list="${_snapshot_datasets_list} SYSTEM";
             ;;
-        J)  snap_JAIL=1;
+        J)  _snapshot_datasets_list="${_snapshot_datasets_list} JAIL";
             ;;
-        D)  snap_DB=1;
+        D)  _snapshot_datasets_list="${_snapshot_datasets_list} DB";
             ;;
-        H)  snap_HOMES=1;
+        H)  _snapshot_datasets_list="${_snapshot_datasets_list} HOMES";
             ;;
-        T)  snap_TMPVAR=1;
+        T)  _snapshot_datasets_list="${_snapshot_datasets_list} TMPVAR";
             ;;
         l)  list_snaps=1;
             ;;
@@ -89,10 +81,10 @@ for _type in ${AVAILABLE_DATASET_TYPES}; do
     # snapshotting datasets
     else
         # Ignore datasets not explicitely selected
-        if [ "$(eval 'echo "$snap_'"$_type"'"')" -lt 1 ]; then
+        if ! contains "${_snapshot_datasets_list}" "${_type}"; then
             continue
         fi
-        if [ "${snap_DB}" -gt 0 ] && [ "${_mongo_locked}" -eq 0 ]; then
+        if [ "${_type}" = "DB" ] && [ "${_mongo_locked}" -eq 0 ]; then
             exec_mongo "db.fsyncLock()" > /dev/null
             _mongo_locked=1
         fi
