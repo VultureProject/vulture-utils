@@ -1,4 +1,5 @@
 #!/usr/bin/env sh
+# shellcheck disable=SC1091
 
 TIME_START="$(date -u -Iseconds)"
 TIME_START_SAFE="$(date -u +%Y%m%d_%H%M%S)"
@@ -44,8 +45,8 @@ usage() {
 }
 
 download_system_update() {
-    local _jail="$1"
-    local _options=""
+    _jail="$1"
+    _options=""
 
     if [ -f /usr/sbin/hbsd-update ] ; then
         if [ -n "$_jail" ] ; then
@@ -66,6 +67,7 @@ download_system_update() {
         if [ ! -f "${temp_dir}/update.tar" ]; then
             # Store (-t) and keep (-T) downloads to ${temp_dir} for later use
             # Do not install update yet (-f)
+            # shellcheck disable=SC2086
             /usr/sbin/hbsd-update -t "${temp_dir}" -T -f $_options || error_and_exit "[!] Error while downloading upgrade!"
         fi
     else
@@ -75,8 +77,8 @@ download_system_update() {
 
 # Function used to use appropriate update binary
 update_system() {
-    local _jail="$1"
-    local _options=""
+    _jail="$1"
+    _options=""
 
     if [ -f /usr/sbin/hbsd-update ] ; then
         if [ -n "$_jail" ] ; then
@@ -100,8 +102,10 @@ update_system() {
         # Previous download should be present in the '{temp_dir}' folder already
         if [ -n "$resolve_strategy" ] ; then
             # echo resolve strategy to hbsd-update for non-interactive resolution of conflicts in /etc/ via etcupdate
+            # shellcheck disable=SC2086
             /usr/bin/yes "$resolve_strategy" | /usr/sbin/hbsd-update -d -t "${temp_dir}" -T -D $_options || error_and_exit "[!] Error while installing upgrade!"
         else
+        # shellcheck disable=SC2086
             /usr/sbin/hbsd-update -d -t "${temp_dir}" -T -D "$_options" || error_and_exit "[!] Error while installing upgrade!"
         fi
     else
@@ -123,7 +127,7 @@ initialize() {
 
     echo "[${TIME_START}] Beginning ${_action_str}"
 
-    trap finalize_early SIGINT
+    trap finalize_early INT
 
     if [ $_need_maintenance_toggle -gt 0 ]; then
         /usr/local/bin/sudo -u vlt-os /home/vlt-os/env/bin/python /home/vlt-os/vulture_os/manage.py toggle_maintenance --on 2>/dev/null || true
@@ -134,9 +138,9 @@ initialize() {
 
     if [ -f /etc/rc.conf.proxy ]; then
         . /etc/rc.conf.proxy
-        export http_proxy=${http_proxy}
-        export https_proxy=${https_proxy}
-        export ftp_proxy=${ftp_proxy}
+        export http_proxy="${http_proxy}"
+        export https_proxy="${https_proxy}"
+        export ftp_proxy="${ftp_proxy}"
     fi
 }
 
@@ -169,10 +173,11 @@ finalize() {
     has_upgraded_kernel
 
     echo "[$(date -u -Iseconds)] ${_action_str} finished!"
-    exit $err_code
+    exit "$err_code"
 }
 
 finalize_early() {
+    # shellcheck disable=SC2317
     finalize 1 "Stopped"
 }
 

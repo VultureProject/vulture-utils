@@ -1,5 +1,6 @@
 #!/bin/sh
 #
+# shellcheck disable=SC2034,SC1091
 #
 # PROVIDE: be_validate
 # REQUIRE: LOGIN vultured
@@ -11,8 +12,8 @@ rcvar="be_validate_enable"
 
 load_rc_config $name
 
-: ${be_validate_enable="NO"}
-: ${be_validate_check_services="jail vultured"}
+: "${be_validate_enable='NO'}"
+: "${be_validate_check_services='jail vultured'}"
 
 name="be_validate"
 desc="Automatically validate a transient Boot Environment"

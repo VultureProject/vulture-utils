@@ -1,5 +1,6 @@
 #!/bin/sh
 #
+# shellcheck disable=SC2034,SC1091
 #
 # PROVIDE: zfs_restore
 # REQUIRE: zfsbe
@@ -15,7 +16,7 @@ required_modules="zfs"
 
 load_rc_config $name
 
-: ${zfs_restore_enable="YES"}
+: "${zfs_restore_enable='YES'}"
 
 do_zfs_restore()
 {

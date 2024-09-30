@@ -1,4 +1,5 @@
 #!/usr/bin/env sh
+# shellcheck disable=SC1091
 #
 # Copyright (C) 2024, Advens <contact@vultureproject.org>
 # All rights reserved.

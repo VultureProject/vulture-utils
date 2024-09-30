@@ -53,8 +53,8 @@ error_and_blink() {
 ## System functions ##
 ######################
 exec_mongo() {
-    local _command="$1"
-    local _hostname="$(hostname)"
+    _command="$1"
+    _hostname="$(hostname)"
 
     if ! /usr/sbin/jls | /usr/bin/grep -q mongodb; then
         return 1
@@ -95,10 +95,10 @@ has_upgraded_kernel() {
 ## Miscellaneous ##
 ###################
 sublist() {
-    local _object_list="$1"
-    local _index_start="${2:-1}"
-    local _index_stop="${3:-$(/bin/echo "$_object_list" | /usr/bin/wc -w | /usr/bin/xargs)}"
-    local _delimiter="${4:- }"
+    _object_list="$1"
+    _index_start="${2:-1}"
+    _index_stop="${3:-$(/bin/echo "$_object_list" | /usr/bin/wc -w | /usr/bin/xargs)}"
+    _delimiter="${4:- }"
 
     if [ -n "${_index_start}" ] && [ "${_index_start}" -gt "${_index_stop}" ]; then
         return 0
@@ -109,8 +109,8 @@ sublist() {
 }
 
 contains() {
-    local _list="$1"
-    local _elem_in_list="$2"
+    _list="$1"
+    _elem_in_list="$2"
 
     if echo "${_list}" | grep -q "${_elem_in_list}"; then
         return 0
@@ -137,8 +137,8 @@ list_unused_BEs() {
 }
 
 has_pending_BE() {
-    local _temp_be_search="$(/sbin/bectl list -H | cut -f 2 | grep -F 'T')"
-    local _stable_be_search="$(/sbin/bectl list -H | cut -f 2 | grep -E '(RN|NR)')"
+    _temp_be_search="$(/sbin/bectl list -H | cut -f 2 | grep -F 'T')"
+    _stable_be_search="$(/sbin/bectl list -H | cut -f 2 | grep -E '(RN|NR)')"
 
     if [ -z "${_temp_be_search}" ] && [ -n "${_stable_be_search}" ]; then
         return 0
@@ -150,8 +150,8 @@ has_pending_BE() {
 }
 
 clean_old_BEs() {
-    local _number_to_keep="$1"
-    local _deletable_BEs="$(list_unused_BEs)"
+    _number_to_keep="$1"
+    _deletable_BEs="$(list_unused_BEs)"
 
     if [ "${_number_to_keep}" -ne "${_number_to_keep}" ]; then
         return 1
@@ -173,9 +173,9 @@ get_root_zpool_name() {
 }
 
 snapshot_datasets() {
-    local _datasets="$1"
-    local _snapshot_name="$2"
-    local _zpool="$(get_root_zpool_name)"
+    _datasets="$1"
+    _snapshot_name="$2"
+    _zpool="$(get_root_zpool_name)"
 
     if [ -z "${_datasets}" ] || [ -z "${_snapshot_name}" ]; then
         return 1
@@ -187,8 +187,8 @@ snapshot_datasets() {
 }
 
 list_snapshots() {
-    local _dataset="$1"
-    local _zpool="$(get_root_zpool_name)"
+    _dataset="$1"
+    _zpool="$(get_root_zpool_name)"
 
     if [ -z "${_dataset}" ]; then
         return 1
@@ -205,9 +205,9 @@ list_snapshots() {
 }
 
 clean_previous_snapshots() {
-    local _datasets="$1"
-    local _number_to_keep="$2"
-    local _zpool="$(get_root_zpool_name)"
+    _datasets="$1"
+    _number_to_keep="$2"
+    _zpool="$(get_root_zpool_name)"
 
     # arguments are mandatory
     if [ -z "${_datasets}" ] || [ -z "${_number_to_keep}" ]; then
@@ -236,9 +236,9 @@ clean_previous_snapshots() {
 ## Rollbacking functions ##
 ###########################
 tag_snapshots_for_rollback() {
-    local _datasets="$1"
-    local _snapshot="$2"
-    local _zpool="$(get_root_zpool_name)"
+    _datasets="$1"
+    _snapshot="$2"
+    _zpool="$(get_root_zpool_name)"
 
     # arguments are mandatory
     if [ -z "${_datasets}" ] || [ -z "${_snapshot}" ]; then
@@ -251,9 +251,9 @@ tag_snapshots_for_rollback() {
 }
 
 list_pending_rollbacks() {
-    local _dataset="$1"
-    local _zpool="$(get_root_zpool_name)"
-    local _snap_name=""
+    _dataset="$1"
+    _zpool="$(get_root_zpool_name)"
+    _snap_name=""
 
     # argument is mandatory
     if [ -z "${_dataset}" ]; then
@@ -270,8 +270,8 @@ list_pending_rollbacks() {
 }
 
 clean_rollback_state_on_datasets() {
-    local _datasets="$1"
-    local _zpool="$(get_root_zpool_name)"
+    _datasets="$1"
+    _zpool="$(get_root_zpool_name)"
 
     # argument is mandatory
     if [ -z "${_datasets}" ]; then

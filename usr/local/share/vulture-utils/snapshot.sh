@@ -1,4 +1,5 @@
 #!/usr/bin/env sh
+# shellcheck disable=SC1091
 
 . /usr/local/share/vulture-utils/common.sh
 
@@ -58,7 +59,7 @@ while getopts 'hASJDHTlk:' opt; do
 done
 shift $((OPTIND-1))
 
-trap finalize_early SIGINT
+trap finalize_early INT
 
 finalize() {
     # set default in case err_code is not specified
@@ -82,6 +83,7 @@ finalize() {
 }
 
 finalize_early() {
+    # shellcheck disable=SC2317
     finalize 1 "Stopped"
 }
 

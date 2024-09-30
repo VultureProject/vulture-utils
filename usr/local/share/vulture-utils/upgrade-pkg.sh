@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
+# shellcheck disable=SC1091
 
 TIME_START="$(date -Iseconds)"
-TIME_START_SAFE="$(date +%Y%m%d_%H%M%S)"
 . /usr/local/share/vulture-utils/common.sh
 
 ###########
@@ -42,7 +42,7 @@ initialize() {
 
     echo "[${TIME_START}+00:00] Beginning packages upgrade"
 
-    trap finalize_early SIGINT
+    trap finalize_early INT
 
     if [ "$_need_maintenance_toggle" -gt 0 ]; then
         /usr/local/bin/sudo -u vlt-os /home/vlt-os/env/bin/python /home/vlt-os/vulture_os/manage.py toggle_maintenance --on 2>/dev/null || true
@@ -100,9 +100,9 @@ initialize() {
 
     if [ -f /etc/rc.conf.proxy ]; then
         . /etc/rc.conf.proxy
-        export http_proxy=${http_proxy}
-        export https_proxy=${https_proxy}
-        export ftp_proxy=${ftp_proxy}
+        export http_proxy="${http_proxy}"
+        export https_proxy="${https_proxy}"
+        export ftp_proxy="${ftp_proxy}"
     fi
 }
 
@@ -165,10 +165,11 @@ finalize() {
     fi
 
     echo "[$(date +%Y-%m-%dT%H:%M:%S+00:00)] Upgrade finished!"
-    exit $err_code
+    exit "$err_code"
 }
 
 finalize_early() {
+    # shellcheck disable=SC2317
     finalize 1 "Stopped"
 }
 
@@ -228,11 +229,13 @@ for jail in "haproxy" "redis" "mongodb" "rsyslog" ; do
 
         /bin/echo "[+] Updating jail $jail packages..."
         IGNORE_OSVERSION="yes" /usr/sbin/pkg -j "$jail" update -f || finalize 1 "Could not update list of packages for jail ${jail}"
+        # shellcheck disable=SC2086
         IGNORE_OSVERSION="yes" /usr/sbin/pkg -j "$jail" upgrade ${_pkg_options} -y || finalize 1 "Could not upgrade packages for jail ${jail}"
         echo "[-] Ok."
 
         # Upgrade vulture-$jail AFTER, in case of "pkg -j $jail upgrade" has removed some permissions... (like redis)
         /bin/echo "[+] Updating vulture-$jail package..."
+        # shellcheck disable=SC2086
         IGNORE_OSVERSION="yes" /usr/sbin/pkg upgrade ${_pkg_options} -y "vulture-$jail" || finalize 1 "Could not upgrade vulture-${jail}"
         echo "[-] Ok."
 
@@ -281,6 +284,7 @@ if [ -z "${targets}" ] || contains "${targets}" "gui" ; then
     /usr/sbin/jexec portal /usr/sbin/service gunicorn stop
 
     echo "[+] Updating vulture-gui package..."
+    # shellcheck disable=SC2086
     IGNORE_OSVERSION="yes" /usr/sbin/pkg upgrade ${_pkg_options} -y vulture-gui  || finalize 1 "Failed to upgrade package vulture-gui"
     echo "[-] Ok."
 
@@ -291,11 +295,13 @@ if [ -z "${targets}" ] || contains "${targets}" "gui" ; then
 
     echo "[+] Updating apache jail's packages..."
     IGNORE_OSVERSION="yes" /usr/sbin/pkg -j apache update -f || finalize 1 "Failed to update the list of packages for the apache jail"
+    # shellcheck disable=SC2086
     IGNORE_OSVERSION="yes" /usr/sbin/pkg -j apache upgrade ${_pkg_options} -y || finalize 1 "Failed to upgrade packages in the apache jail"
     echo "[-] Ok."
 
     echo "[+] Updating portal jail's packages..."
     IGNORE_OSVERSION="yes" /usr/sbin/pkg -j portal update -f || finalize 1 "Failed to update the list of packages for the portal jail"
+    # shellcheck disable=SC2086
     IGNORE_OSVERSION="yes" /usr/sbin/pkg -j portal upgrade ${_pkg_options} -y || finalize 1 "Failed to upgrade packages in the portal jail"
     echo "[-] Ok."
 
@@ -309,6 +315,7 @@ fi
 
 if [ -z "${targets}" ] || contains "${targets}" "base" ; then
         echo "[+] Updating vulture-base ..."
+        # shellcheck disable=SC2086
         IGNORE_OSVERSION="yes" /usr/sbin/pkg upgrade ${_pkg_options} -y vulture-base || finalize 1 "Failed to upgrade vulture-base"
 
         /bin/echo "[+] Reloading dnsmasq..."
@@ -321,12 +328,14 @@ fi
 
 if [ -z "$targets" ]; then
     echo "[+] Updating all packages on system..."
+    # shellcheck disable=SC2086
     IGNORE_OSVERSION="yes" /usr/sbin/pkg upgrade ${_pkg_options} -y || finalize 1 "Error while upgrading packages"
     echo "[-] All packages updated"
 else
     for package in $targets; do
         if IGNORE_OSVERSION="yes" /usr/sbin/pkg info "$package" > /dev/null 2>&1; then
             echo "[+] Upgrading package ${package}"
+            # shellcheck disable=SC2086
             IGNORE_OSVERSION="yes" /usr/sbin/pkg upgrade ${_pkg_options} -y "${package}" || warn "[!] Error while upgrading package ${package}"
             echo "[-] Package updated"
         fi
