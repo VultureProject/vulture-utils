@@ -94,7 +94,7 @@ update_system() {
             echo "[!] Custom version of system update selected, this version will be installed without signature verification!"
             _options="${_options} -v $system_version -U"
         fi
-        if [ $snapshot_system -gt 0 ]; then
+        if [ -z "$_jail" ] && [ $snapshot_system -gt 0 ]; then
             _options="${_options} -b ${_snap_name}"
         fi
         # Store (-t) and keep (-T) downloads to ${temp_dir} for later use

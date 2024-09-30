@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [UPGRADE-OS] Only create a Boot Environment when an upgrade is available
 - [UPGRADE-OS] Incorrect date format
 - [UPGRADE-OS] Correctly Download and use the upgrade when upgrading only one or more jails and base is up-to-date
+- [UPGRADE-OS] Set correct flags for system upgrades when installing in jails, with BE activated
 ### Changed
 - [UPGRADE-OS] Default to creating/using a BE when installing root upgrade
 
