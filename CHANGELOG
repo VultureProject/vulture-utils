@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [UPGRADE-OS] Prevent upgrading jails when OS has a pending upgrade, as /.jail_system/ folder is kept with root filesystem dataset
 ### Changed
 - [UPGRADE-OS] Default to creating/using a BE when installing root upgrade
+- [SNAPSHOT/RESTORE] Use Boot Environments when snapshotting/restoring root system dataset
 
 
 ## [1.0.0] - 2024-09-11

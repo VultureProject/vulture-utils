@@ -8,6 +8,7 @@
 #############
 clean_rollback_triggers=0
 list_rollbacks=0
+rollback_system=0
 rollback_to=""
 _need_restart=0
 _rollback_datasets_list=""
@@ -43,8 +44,10 @@ fi
 while getopts 'hASJHDTclr:' opt; do
     case "${opt}" in
         A)  _rollback_datasets_list="SYSTEM JAIL DB HOMES TMPVAR";
+            rollback_system=1;
             ;;
-        S)  _rollback_datasets_list="${_rollback_datasets_list} SYSTEM"
+        S)  # the system is snapshotted using bectl, and not regular snapshots
+            rollback_system=1;
             ;;
         J)  _rollback_datasets_list="${_rollback_datasets_list} JAIL"
             ;;
@@ -93,6 +96,36 @@ finalize_early() {
     finalize 1 "Stopped"
 }
 
+# SYSTEM dataset (using bectl)
+if [ "${list_rollbacks}" -gt 0 ]; then
+    printf "SYSTEM:\t"
+    get_pending_BE
+    printf "\n"
+elif [ "${rollback_system}" -gt 0 ]; then
+    /sbin/bectl activate -T
+    if [ "$clean_rollback_triggers" -gt 0 ]; then
+        _current_BE="$(get_current_BE)"
+        if [ -n "${_current_BE}" ]; then
+            /sbin/bectl activate "$(get_current_BE)"
+        else
+            error_and_exit "[!] Could not get current Boot Environment, cannot reset BE state!"
+        fi
+    else
+        BE_to_rollback="$(list_inactive_BEs | cut -d ' ' -f1)"
+        if [ -n "${rollback_to}" ]; then
+            BE_to_rollback="$(list_inactive_BEs | grep -o "${rollback_to}")"
+        fi
+        if [ -z "${BE_to_rollback}" ]; then
+            error_and_exit "[!] Snapshot not found, cannot rollback SYSTEM dataset"
+        else
+            echo "rollbacking SYSTEM"
+            /sbin/bectl activate "${BE_to_rollback}"
+            _need_restart=1
+        fi
+    fi
+fi
+
+# OTHER datatypes (using regular snapshots)
 for _type in ${AVAILABLE_DATASET_TYPES}; do
     _type_datasets="$(eval 'echo "$'"$_type"'_DATASETS"')"
     _rollback_list="$(list_pending_rollbacks "$(echo "${_type_datasets}" | cut -d ' ' -f1)")"

@@ -10,14 +10,13 @@ SNAPSHOT_PREFIX="VLT_"
 
 JAILS_LIST="apache haproxy mongodb portal redis rsyslog"
 
-AVAILABLE_DATASET_TYPES="SYSTEM JAIL DB HOMES TMPVAR"
-SYSTEM_DATASETS="ROOT/$(/sbin/mount -l | /usr/bin/grep "on / " | /usr/bin/cut -d ' ' -f 1 | /usr/bin/cut -d / -f 3)"
+AVAILABLE_DATASET_TYPES="JAIL DB HOMES TMPVAR"
 JAIL_DATASETS="apache apache/var apache/usr portal portal/var portal/usr haproxy haproxy/var haproxy/usr mongodb mongodb/var mongodb/usr redis redis/var redis/usr rsyslog rsyslog/var rsyslog/usr"
 DB_DATASETS="mongodb/var/db"
 HOMES_DATASETS="usr/home"
 TMPVAR_DATASETS="apache/var/log portal/var/log haproxy/var/log mongodb/var/log redis/var/log rsyslog/var/log tmp var/audit var/cache var/crash var/log var/tmp"
 # 'usr' and 'var' are set to nomount, so they don't hold any data (data is held by the root dataset)
-export AVAILABLE_DATASET_TYPES SYSTEM_DATASETS JAIL_DATASETS DB_DATASETS HOMES_DATASETS TMPVAR_DATASETS
+export AVAILABLE_DATASET_TYPES JAIL_DATASETS DB_DATASETS HOMES_DATASETS TMPVAR_DATASETS
 
 # If "NO_COLOR" environment variable is present, or we aren't speaking to a
 # tty, disable output colors.
@@ -122,16 +121,58 @@ contains() {
 ################################
 ## Boot Environment functions ##
 ################################
-list_unused_BEs() {
+get_BEs() {
     # Order BEs (ordered, most recent first)
-    /sbin/bectl list -H -Ccreation |\
+    /sbin/bectl list -H -Ccreation
+}
+
+get_vlt_BEs() {
+    get_BEs | /usr/bin/grep "${SNAPSHOT_PREFIX}"
+}
+
+get_pending_BE() {
+    # Order BEs (ordered, most recent first)
+    get_vlt_BEs |\
     while read -r _name _status _rest; do
-        if /bin/echo "${_name}" | /usr/bin/grep -q "${SNAPSHOT_PREFIX}"; then
-            # filter out any BE that could be N, R, T or a combination of those (man bectl)
-            if [ "${_status}" = "-" ]; then
-                /usr/bin/printf "%s " "${_name}"
-                # _deletable_BEs="${_deletable_BEs} ${_name}"
-            fi
+        # Get only the BE activated temporarily, or for next Boots
+        # order is important, as it defines what BE will boot next: 'T' before 'R'
+        if [ "${_status}" = "T" ] || [ "${_status}" = "R" ] || [ "${_status}" = "RT" ]; then
+            /usr/bin/printf "%s" "${_name}"
+            return 0
+        fi
+    done
+    return 1
+}
+
+get_current_BE() {
+    # DON'T use get_vlt_BEs: all BEs should be listed here
+    get_BEs |\
+    while read -r _name _status _rest; do
+        # Get only the BE activated now
+        if /usr/bin/printf "${_status}" | /usr/bin/grep -q "N"; then
+            /usr/bin/printf "%s" "${_name}"
+            return 0
+        fi
+    done
+    return 1
+}
+
+list_inactive_BEs() {
+    get_vlt_BEs |\
+    while read -r _name _status _rest; do
+        # filter out the current BE (tagged with an N in status)
+        if /usr/bin/printf "${_status}" | /usr/bin/grep -qv "N"; then
+            /usr/bin/printf "%s " "${_name}"
+        fi
+    done
+}
+
+list_unused_BEs() {
+    get_vlt_BEs |\
+    while read -r _name _status _rest; do
+        # filter out any BE that could be N, R, T or a combination of those (man bectl)
+        if [ "${_status}" = "-" ]; then
+            /usr/bin/printf "%s " "${_name}"
         fi
     done
 }

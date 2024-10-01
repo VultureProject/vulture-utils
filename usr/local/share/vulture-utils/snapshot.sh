@@ -8,6 +8,7 @@
 #############
 snap_name="${SNAPSHOT_PREFIX}SNAP_$(date +%Y-%m-%dT%H:%M:%S)"
 list_snaps=0
+snapshot_system=0
 keep_previous_snap=-1
 _mongo_locked=0
 _snapshot_datasets_list=""
@@ -38,8 +39,10 @@ fi
 while getopts 'hASJDHTlk:' opt; do
     case "${opt}" in
         A)  _snapshot_datasets_list="SYSTEM JAIL DB HOMES TMPVAR";
+            snapshot_system=1;
             ;;
-        S)  _snapshot_datasets_list="${_snapshot_datasets_list} SYSTEM";
+        S)  # the system is snapshotted using bectl, and not regular snapshots
+            snapshot_system=1;
             ;;
         J)  _snapshot_datasets_list="${_snapshot_datasets_list} JAIL";
             ;;
@@ -87,6 +90,21 @@ finalize_early() {
     finalize 1 "Stopped"
 }
 
+if [ "${list_snaps}" -gt 0 ]; then
+    _be_list="$(get_vlt_BEs | cut -f 1)"
+    printf "SYSTEM:\t"
+    for _be in $_be_list; do
+        printf "%s\t" "$_be"
+    done
+    printf "\n"
+elif [ "$snapshot_system" -gt 0 ]; then
+    echo "making new snapshot for SYSTEM datasets"
+    /sbin/bectl create "$snap_name"
+    if [ "$keep_previous_snap" -ge 0 ]; then
+        echo "keeping only $keep_previous_snap version(s) for 'SYSTEM' dataset(s)"
+        clean_old_BEs "$keep_previous_snap"
+    fi
+fi
 
 for _type in ${AVAILABLE_DATASET_TYPES}; do
     _type_datasets="$(eval 'echo "$'"$_type"'_DATASETS"')"
