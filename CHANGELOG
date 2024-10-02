@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [UPGRADE-OS] Incorrect date format
 - [UPGRADE-OS] Correctly Download and use the upgrade when upgrading only one or more jails and base is up-to-date
 - [UPGRADE-OS] Set correct flags for system upgrades when installing in jails, with BE activated
+- [UPGRADE-OS] Prevent upgrading jails when OS has a pending upgrade, as /.jail_system/ folder is kept with root filesystem dataset
 ### Changed
 - [UPGRADE-OS] Default to creating/using a BE when installing root upgrade
 
