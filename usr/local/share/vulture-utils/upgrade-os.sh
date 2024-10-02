@@ -120,10 +120,8 @@ initialize() {
         exit 1
     fi
 
-    if [ "${upgrade_root}" -gt 0 ]; then
-        has_pending_BE || exit 1
-        has_upgraded_kernel || exit 1
-    fi
+    has_pending_BE || exit 1
+    has_upgraded_kernel || exit 1
 
     echo "[${TIME_START}] Beginning ${_action_str}"
 
