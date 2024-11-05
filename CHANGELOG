@@ -6,18 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
-### Fixed
-- [UPGRADE-OS] Only create a Boot Environment when an upgrade is available
-- [UPGRADE-OS] Incorrect date format
-- [UPGRADE-OS] Correctly Download and use the upgrade when upgrading only one or more jails and base is up-to-date
-- [UPGRADE-OS] Set correct flags for system upgrades when installing in jails, with BE activated
-- [UPGRADE-OS] Prevent upgrading jails when OS has a pending upgrade, as /.jail_system/ folder is kept with root filesystem dataset
-### Changed
-- [UPGRADE-OS] Default to creating/using a BE when installing root upgrade
-- [SNAPSHOT/RESTORE] Use Boot Environments when snapshotting/restoring root system dataset
 
 
-## [1.0.0] - 2024-09-11
+## [1.0.0] - 2024-10-03
 First version of the project!
 ### Added
 - [VLT-ADMIN] New command vlt-admin: allows to launch all subcommands defined on the project

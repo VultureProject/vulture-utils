@@ -15,6 +15,7 @@ targets=""
 _need_maintenance_toggle=1
 _pkg_options=""
 _vultured_was_up=0
+_gui_was_up=0
 _cron_was_up=0
 
 #############
@@ -162,6 +163,11 @@ finalize() {
             # Restart Vultured after upgrade
             /usr/sbin/service vultured start
         fi
+        if [ $_gui_was_up -eq 1 ]; then
+            # Restart GUI if something went wrong during upgrade
+            /usr/sbin/jexec portal /usr/sbin/service gunicorn start
+            /usr/sbin/jexec apache /usr/sbin/service gunicorn start
+        fi
     fi
 
     echo "[$(date +%Y-%m-%dT%H:%M:%S+00:00)] Upgrade finished!"
@@ -280,6 +286,7 @@ done
 # No parameter, or gui
 if [ -z "${targets}" ] || contains "${targets}" "gui" ; then
     echo "[+] Updating GUI..."
+    _gui_was_up=1
     /usr/sbin/jexec apache /usr/sbin/service gunicorn stop
     /usr/sbin/jexec portal /usr/sbin/service gunicorn stop
 
@@ -306,9 +313,10 @@ if [ -z "${targets}" ] || contains "${targets}" "gui" ; then
     echo "[-] Ok."
 
     echo "[+] Restarting services..."
-    /usr/sbin/jexec apache /usr/sbin/service gunicorn restart
+    /usr/sbin/jexec portal /usr/sbin/service gunicorn start
+    /usr/sbin/jexec apache /usr/sbin/service gunicorn start
     /usr/sbin/jexec apache /usr/sbin/service nginx restart
-    /usr/sbin/jexec portal /usr/sbin/service gunicorn restart
+    _gui_was_up=0
     echo "[-] Ok."
     echo "[-] GUI updated."
 fi
