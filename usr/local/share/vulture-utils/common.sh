@@ -107,11 +107,11 @@ sublist() {
     return $((_index_stop - _index_start + 1))
 }
 
-contains() {
+contains_word() {
     _list="$1"
-    _elem_in_list="$2"
+    _word_in_list="$2"
 
-    if echo "${_list}" | grep -q "${_elem_in_list}"; then
+    if echo "${_list}" | grep -qw "${_word_in_list}"; then
         return 0
     else
         return 1

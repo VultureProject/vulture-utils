@@ -207,6 +207,10 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+if contains_word "$targets" "all"; then
+    targets=""
+fi
+
 if [ $clean_cache -gt 0 ] && [ $download_only -gt 0 ]; then
     error_and_exit "[!] Cannot activate -c if -D or -T are set"
 fi
@@ -231,7 +235,7 @@ fi
 
 # If no argument or jail asked
 for jail in "haproxy" "redis" "mongodb" "rsyslog" ; do
-    if [ -z "${targets}" ] || contains "$targets" "$jail" ; then
+    if [ -z "${targets}" ] || contains_word "$targets" "$jail" ; then
 
         /bin/echo "[+] Updating jail $jail packages..."
         IGNORE_OSVERSION="yes" /usr/sbin/pkg -j "$jail" update -f || finalize 1 "Could not update list of packages for jail ${jail}"
@@ -284,7 +288,7 @@ for jail in "haproxy" "redis" "mongodb" "rsyslog" ; do
 done
 
 # No parameter, or gui
-if [ -z "${targets}" ] || contains "${targets}" "gui" ; then
+if [ -z "${targets}" ] || contains_word "${targets}" "gui" ; then
     echo "[+] Updating GUI..."
     _gui_was_up=1
     /usr/sbin/jexec apache /usr/sbin/service gunicorn stop
@@ -321,7 +325,7 @@ if [ -z "${targets}" ] || contains "${targets}" "gui" ; then
     echo "[-] GUI updated."
 fi
 
-if [ -z "${targets}" ] || contains "${targets}" "base" ; then
+if [ -z "${targets}" ] || contains_word "${targets}" "base" ; then
         echo "[+] Updating vulture-base ..."
         # shellcheck disable=SC2086
         IGNORE_OSVERSION="yes" /usr/sbin/pkg upgrade ${_pkg_options} -y vulture-base || finalize 1 "Failed to upgrade vulture-base"

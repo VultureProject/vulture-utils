@@ -120,7 +120,7 @@ for _type in ${AVAILABLE_DATASET_TYPES}; do
     # snapshotting datasets
     else
         # Ignore datasets not explicitely selected
-        if ! contains "${_snapshot_datasets_list}" "${_type}"; then
+        if ! contains_word "${_snapshot_datasets_list}" "${_type}"; then
             continue
         fi
         if [ "${_type}" = "DB" ] && [ "${_mongo_locked}" -eq 0 ]; then
