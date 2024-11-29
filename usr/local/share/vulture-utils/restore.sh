@@ -140,7 +140,7 @@ for _type in ${AVAILABLE_DATASET_TYPES}; do
     fi
 
     # Ignore datasets not explicitely selected from here
-    if ! contains "${_rollback_datasets_list}" "${_type}"; then
+    if ! contains_word "${_rollback_datasets_list}" "${_type}"; then
         continue
     fi
 
