@@ -6,7 +6,7 @@
 #############
 # variables #
 #############
-snap_name="${SNAPSHOT_PREFIX}SNAP_$(date +%Y-%m-%dT%H:%M:%S)"
+snap_name="${SNAPSHOT_PREFIX}SNAP_$(date -u +%Y%m%d_%H%M%S)"
 list_snaps=0
 snapshot_system=0
 keep_previous_snap=-1

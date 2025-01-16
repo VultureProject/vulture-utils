@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.1] - 2024-12-13
 ### Changed
 - [UPGRADE-PKG] specifying 'all' to `vlt-admin upgrade-pkg` now upgrades every package and jails
+- [SNAPSHOT] Avoid ":" characters in created snapshots
 
 
 ## [1.0.0] - 2024-10-03
