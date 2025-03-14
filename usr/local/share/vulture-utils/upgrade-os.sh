@@ -263,15 +263,15 @@ if [ $download_only -gt 0 ]; then
     finalize
 fi
 
-if [ ${upgrade_root} -gt 0 ]; then
-    /bin/echo "[+] Updating system..."
-    update_system || finalize 1 "Failed to install system upgrades"
-fi
 for jail in ${jails}; do
     /bin/echo "[+] Updating jail ${jail}..."
     download_system_update "${jail}" || finalize 1 "Failed to download system upgrade for jail ${jail}"
     update_system "${jail}" || finalize 1 "Failed to install system upgrades on jail ${jail}"
 done
+if [ ${upgrade_root} -gt 0 ]; then
+    /bin/echo "[+] Updating system..."
+    update_system || finalize 1 "Failed to install system upgrades"
+fi
 /bin/echo "[-] Done."
 
 finalize
