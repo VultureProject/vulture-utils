@@ -58,11 +58,32 @@ exec_mongo() {
     if ! /usr/sbin/jls | /usr/bin/grep -q mongodb; then
         return 1
     fi
-    if [ -z "$_hostname" ] || [ -z "${_command}" ]; then
+    if [ -z "$_hostname" ]; then
         return 1
     fi
 
-    /usr/sbin/jexec mongodb mongo --ssl --sslCAFile /var/db/pki/ca.pem --sslPEMKeyFile /var/db/pki/node.pem "${_hostname}:9091" -eval "${_command}"
+    if [ -z "${_command}" ]; then
+        /usr/sbin/jexec mongodb mongo --quiet --ssl --sslCAFile /var/db/pki/ca.pem --sslPEMKeyFile /var/db/pki/node.pem "${_hostname}:9091/vulture"
+    else
+        /usr/sbin/jexec mongodb mongo --quiet --ssl --sslCAFile /var/db/pki/ca.pem --sslPEMKeyFile /var/db/pki/node.pem "${_hostname}:9091/vulture" --eval "${_command}"
+    fi
+    return $?
+}
+
+exec_redis() {
+    _command="$1"
+    # _password="$(/usr/local/bin/sudo -u vlt-os /home/vlt-os/env/bin/python /home/vlt-os/vulture_os/manage.py shell -c 'from system.cluster.models import Cluster; print(Cluster.get_global_config().redis_password)')"
+    _password="$(exec_mongo "db.system_config.findOne().redis_password")"
+
+    if ! /usr/sbin/jls | /usr/bin/grep -q redis; then
+        return 1
+    fi
+
+    if [ -z "${_password}" ]; then
+        /usr/sbin/jexec redis /usr/local/bin/redis-cli ${_command}
+    else
+        REDISCLI_AUTH="$_password" /usr/sbin/jexec redis /usr/local/bin/redis-cli ${_command}
+    fi
     return $?
 }
 
