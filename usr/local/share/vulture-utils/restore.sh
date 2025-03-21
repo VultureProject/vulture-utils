@@ -20,7 +20,7 @@ _rollback_datasets_list=""
 #############
 usage() {
     echo "USAGE restore OPTIONS"
-    echo "This stript triggers rollbacks on all or specific datasets, machine should then be restarted to apply the rollbacks"
+    echo "This script triggers rollbacks on all or specific datasets, machine should then be restarted to apply the rollbacks"
     echo ""
     echo "OPTIONS:"
     echo "	-A	act on all underlying datasets"
