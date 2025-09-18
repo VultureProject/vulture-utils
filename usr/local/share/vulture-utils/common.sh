@@ -11,7 +11,7 @@ SNAPSHOT_PREFIX="VLT_"
 JAILS_LIST="apache haproxy mongodb portal redis rsyslog"
 
 AVAILABLE_DATASET_TYPES="JAIL DB HOMES TMPVAR"
-JAIL_DATASETS="apache apache/var apache/usr portal portal/var portal/usr haproxy haproxy/var haproxy/usr mongodb mongodb/var mongodb/usr redis redis/var redis/usr rsyslog rsyslog/var rsyslog/usr"
+JAIL_DATASETS="apache apache/var apache/var/db apache/usr portal portal/var portal/var/db portal/usr haproxy haproxy/var haproxy/var/db haproxy/usr mongodb mongodb/var mongodb/usr redis redis/var redis/var/db redis/usr rsyslog rsyslog/var rsyslog/var/db rsyslog/usr"
 DB_DATASETS="mongodb/var/db"
 HOMES_DATASETS="usr/home"
 TMPVAR_DATASETS="apache/var/log portal/var/log haproxy/var/log mongodb/var/log redis/var/log rsyslog/var/log tmp var/audit var/cache var/crash var/log var/tmp"

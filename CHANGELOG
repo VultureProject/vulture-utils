@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - [SNAPSHOT] Snapshot/restore now handle the absence of some datasets
+### Fixed
+- [SNAPSHOT] Use /var/db jail datasets for jail snapshots
 
 
 ## [1.0.2] - 2025-03-28
