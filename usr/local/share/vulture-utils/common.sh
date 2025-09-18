@@ -90,6 +90,25 @@ has_upgraded_kernel() {
     fi
 }
 
+get_root_zpool_name() {
+    /sbin/mount -l | /usr/bin/grep "on / " | /usr/bin/cut -d / -f 1
+}
+
+zfs_dataset_exists() {
+    _dataset="$1"
+    _zpool="$(get_root_zpool_name)"
+
+    if [ -z "${_dataset}" ]; then
+        return 1
+    fi
+
+    if /sbin/zfs list -oname | grep -q "^${_zpool}/${_dataset}\$"; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 ###################
 ## Miscellaneous ##
 ###################
@@ -209,10 +228,6 @@ clean_old_BEs() {
 ############################
 ## Snapshotting functions ##
 ############################
-get_root_zpool_name() {
-    /sbin/mount -l | /usr/bin/grep "on / " | /usr/bin/cut -d / -f 1
-}
-
 snapshot_datasets() {
     _datasets="$1"
     _snapshot_name="$2"
@@ -223,7 +238,9 @@ snapshot_datasets() {
     fi
 
     for dataset in ${_datasets}; do
-        /sbin/zfs snap "${_zpool}/${dataset}@${_snapshot_name}"
+        if zfs_dataset_exists "${dataset}"; then
+            /sbin/zfs snap "${_zpool}/${dataset}@${_snapshot_name}"
+        fi
     done
 }
 
@@ -235,14 +252,16 @@ list_snapshots() {
         return 1
     fi
 
-    # List snapshot names only, ordering by descending order (most recent first)
-    /sbin/zfs list -H -tsnap -oname -Screation "${_zpool}/${_dataset}" |\
-        # Get snapshot name part (remove dataset part)
-        /usr/bin/cut -d '@' -f 2 |\
-        # filter out snapshot not created by scripts
-        /usr/bin/grep -E "^${SNAPSHOT_PREFIX}.*" |\
-        # remove leading/trailing whitespaces and return a single string with elements separated by a space
-        /usr/bin/xargs
+    if zfs_dataset_exists "${_dataset}"; then
+        # List snapshot names only, ordering by descending order (most recent first)
+        /sbin/zfs list -H -tsnap -oname -Screation "${_zpool}/${_dataset}" |\
+            # Get snapshot name part (remove dataset part)
+            /usr/bin/cut -d '@' -f 2 |\
+            # filter out snapshot not created by scripts
+            /usr/bin/grep -E "^${SNAPSHOT_PREFIX}.*" |\
+            # remove leading/trailing whitespaces and return a single string with elements separated by a space
+            /usr/bin/xargs
+    fi
 }
 
 clean_previous_snapshots() {
@@ -260,15 +279,17 @@ clean_previous_snapshots() {
     fi
 
     for _dataset in ${_datasets}; do
-        # most recent are first in list
-        _ordered_snapshots="$(list_snapshots "${_dataset}")"
+        if zfs_dataset_exists "${_dataset}"; then
+            # most recent are first in list
+            _ordered_snapshots="$(list_snapshots "${_dataset}")"
 
-        # List index begins at 1, so remove from the next element to the last
-        _snaps_to_remove="$(sublist "${_ordered_snapshots}" "$((_number_to_keep+1))")"
-        for _snap in $_snaps_to_remove; do
-            /bin/echo "removing snapshot '${_zpool}/${_dataset}@${_snap}'"
-            /sbin/zfs destroy "${_zpool}/${_dataset}@${_snap}"
-        done
+            # List index begins at 1, so remove from the next element to the last
+            _snaps_to_remove="$(sublist "${_ordered_snapshots}" "$((_number_to_keep+1))")"
+            for _snap in $_snaps_to_remove; do
+                /bin/echo "removing snapshot '${_zpool}/${_dataset}@${_snap}'"
+                /sbin/zfs destroy "${_zpool}/${_dataset}@${_snap}"
+            done
+        fi
     done
 }
 
@@ -286,8 +307,10 @@ tag_snapshots_for_rollback() {
         return 1
     fi
     for _dataset in ${_datasets}; do
-        echo "will rollback to ${_zpool}/${_dataset}@${_snapshot}"
-        /sbin/zfs set snapshot:restore=YES "${_zpool}/${_dataset}@${_snapshot}"
+        if zfs_dataset_exists "${_dataset}"; then
+            echo "will rollback to ${_zpool}/${_dataset}@${_snapshot}"
+            /sbin/zfs set snapshot:restore=YES "${_zpool}/${_dataset}@${_snapshot}"
+        fi
     done
 }
 
@@ -301,13 +324,15 @@ list_pending_rollbacks() {
         return 1
     fi
 
-    zfs list -tsnap -o name,snapshot:restore "${_zpool}/${_dataset}" 2>/dev/null |\
-    while read -r _name _status; do
-        if [ "${_status}" = "YES" ]; then
-            _snap_name=$(echo "${_name}" | cut -d @ -f 2)
-            /usr/bin/printf "%s " "${_snap_name}"
-        fi
-    done
+    if zfs_dataset_exists "${_dataset}"; then
+        zfs list -tsnap -o name,snapshot:restore "${_zpool}/${_dataset}" 2>/dev/null |\
+        while read -r _name _status; do
+            if [ "${_status}" = "YES" ]; then
+                _snap_name=$(echo "${_name}" | cut -d @ -f 2)
+                /usr/bin/printf "%s " "${_snap_name}"
+            fi
+        done
+    fi
 }
 
 clean_rollback_state_on_datasets() {
@@ -320,10 +345,12 @@ clean_rollback_state_on_datasets() {
     fi
 
     for _dataset in ${_datasets}; do
-        _snapshot_list="$(list_pending_rollbacks "${_dataset}")"
-        for _snapshot in ${_snapshot_list}; do
-            echo "Resetting rollback state for ${_dataset}"
-            /sbin/zfs inherit snapshot:restore "${_zpool}/${_dataset}@${_snapshot}"
-        done
+        if zfs_dataset_exists "${_dataset}"; then
+            _snapshot_list="$(list_pending_rollbacks "${_dataset}")"
+            for _snapshot in ${_snapshot_list}; do
+                echo "Resetting rollback state for ${_dataset}"
+                /sbin/zfs inherit snapshot:restore "${_zpool}/${_dataset}@${_snapshot}"
+            done
+        fi
     done
 }
