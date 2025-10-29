@@ -253,6 +253,7 @@ for jail in "haproxy" "redis" "mongodb" "rsyslog" ; do
         case "$jail" in
             rsyslog)
                 /usr/sbin/jexec "$jail" /usr/sbin/service rsyslogd restart
+                /usr/sbin/jexec "$jail" /usr/sbin/service filebeat restart
                 ;;
             mongodb)
                 /usr/sbin/jexec "$jail" /usr/sbin/service mongod restart

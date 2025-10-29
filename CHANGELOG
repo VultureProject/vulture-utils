@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+### Added
+- [UPGRADE-PKG] Restart Filebeat service(s) following rsyslog jail upgrade
 
 
 ## [1.0.3] - 2025-10-13
