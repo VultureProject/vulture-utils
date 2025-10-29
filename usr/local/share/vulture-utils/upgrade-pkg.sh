@@ -41,7 +41,7 @@ initialize() {
     has_pending_BE || exit 1
     has_upgraded_kernel || exit 1
 
-    echo "[${TIME_START}+00:00] Beginning packages upgrade"
+    echo "[${TIME_START}] Beginning packages upgrade"
 
     trap finalize_early INT
 
@@ -170,7 +170,7 @@ finalize() {
         fi
     fi
 
-    echo "[$(date +%Y-%m-%dT%H:%M:%S+00:00)] Upgrade finished!"
+    echo "[$(date -Iseconds)] Upgrade finished!"
     exit "$err_code"
 }
 

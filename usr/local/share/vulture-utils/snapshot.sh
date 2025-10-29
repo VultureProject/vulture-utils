@@ -18,6 +18,8 @@ _snapshot_datasets_list=""
 #############
 usage() {
     echo "USAGE snapshot OPTIONS"
+    echo "This command triggers snapshots on all or specific datasets, those snapshot points are then available for restorations"
+    echo ""
     echo "OPTIONS:"
     echo "	-A	Snapshot all underlying datasets"
     echo "	-S	Snapshot the system dataset(s)"
