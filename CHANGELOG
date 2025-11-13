@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+### Added
+- [UPGRADE-OS] New 'upgrade-major' command to upgrade whole system to the next OS major
 
 
 ## [1.1.1] - 2026-09-11
