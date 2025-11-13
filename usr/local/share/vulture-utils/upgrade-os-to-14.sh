@@ -4,7 +4,6 @@
 . /usr/local/share/vulture-utils/common.sh
 
 SCRIPT=$(realpath "$0")
-FOLDER="${SCRIPT%/*}"
 
 COLOR_OFF='\033[0m'
 COLOR_RED='\033[0;31m'
@@ -122,7 +121,7 @@ update_zfs_datasets() {
         if ! zfs_dataset_exists ROOT/$_current_be/$jail; then
             warn "Jail $jail's dataset is in legacy format, it will be renamed and node will need to restart."
             if [ $_run_ok -ne 1 ]; then
-                /bin/echo -n "Do you want to continue anyway? [yN]: "
+                /usr/bin/printf "Do you want to continue anyway? [yN]: "
                 answer=""
                 read -r answer
                 case "${answer}" in
@@ -162,10 +161,8 @@ update_zfs_datasets() {
 
     # Rename home dataset
     if ! zfs_dataset_exists ROOT/$_current_be/usr/home; then
-        for dataset in usr/home; do
-            /sbin/zfs set canmount=noauto $_zpool/$dataset
-        done
         /sbin/umount /zroot/rsyslog/home/vlt-os/vulture_os/services/rsyslogd/config /zroot/portal/home/vlt-os /zroot/apache/home/vlt-os
+        /sbin/zfs set canmount=noauto $_zpool/usr/home
         /sbin/zfs rename -f $_zpool/usr $_zpool/ROOT/$_current_be/usr
         /sbin/mount -aL
 
@@ -367,7 +364,7 @@ fi
 
 info "Upgrades of the base system, jails and packages will be installed in the BE '$new_be'."
 if [ $_run_ok -ne 1 ]; then
-    /bin/echo -n "Do you wish to upgrade your node? [yN]: "
+    /usr/bin/printf "Do you want to upgrade your node? [yN]: "
     answer=""
     read -r answer
     case "${answer}" in
@@ -405,11 +402,11 @@ else
 
     /sbin/bectl create -r $new_be || finalize 1 "Cannot create BE '$new_be', delete it manually and restart this script."
     # There is a bug where canmount=off is changed to noauto
-    /sbin/zfs set canmount=off $(get_root_zpool_name)/ROOT/$new_be/usr
+    /sbin/zfs set canmount=off "$(get_root_zpool_name)/ROOT/$new_be/usr"
     mnt_temp_dir=$(mktemp -d)
     /sbin/bectl mount $new_be $mnt_temp_dir || finalize 1 "Cannot mount BE '$new_be'."
     # There is a bug where subdatasets is not mounted if parent dataset has canmount=off
-    /sbin/mount -t zfs $(get_root_zpool_name)/ROOT/$new_be/usr/home $mnt_temp_dir/usr/home
+    /sbin/mount -t zfs "$(get_root_zpool_name)/ROOT/$new_be/usr/home" $mnt_temp_dir/usr/home
 
     # Fix pam.d
     if [ -d $mnt_temp_dir/.jail_system ] && [ ! -h "$mnt_temp_dir/zroot/apache/etc/pam.d" ]; then
