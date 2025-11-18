@@ -57,10 +57,9 @@ download_packages() {
     _mnt_temp_dir="$1"
 
     chroot_and_env="/usr/sbin/chroot $_mnt_temp_dir /usr/bin/env IGNORE_OSVERSION=yes ASSUME_ALWAYS_YES=yes"
-
-    /bin/echo "[+] Bootstrap pkg"
-    $chroot_and_env /usr/sbin/pkg bootstrap -f || finalize 1 "Could not bootstrap pkg"
-    /bin/echo "[-] Done"
+    if [ $download_only -eq 1 ]; then
+        chroot_and_env="$chroot_and_env ABI=FreeBSD:14:amd64"
+    fi
 
     /bin/echo "[+] Updating root pkg repository catalogue"
     $chroot_and_env /usr/sbin/pkg update -f || finalize 1 "Could not update list of packages"
@@ -71,11 +70,16 @@ download_packages() {
     /bin/echo "[-] Done"
 
     /bin/echo "[+] Fetching upgrades"
+    $chroot_and_env /usr/sbin/pkg unlock vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
     $chroot_and_env /usr/sbin/pkg fetch -u || finalize 1 "Failed to download packages"
+    $chroot_and_env /usr/sbin/pkg lock vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
     /bin/echo "[-] Done"
 
-    for jail in "haproxy" "rsyslog" "redis" "mongodb" "portal" "apache" ; do
+    for jail in $JAILS_LIST; do
+        /sbin/mount -t nullfs $_mnt_temp_dir/.jail_system $_mnt_temp_dir/zroot/$jail/.jail_system || finalize "Unable to mount .jail_system"
+        $chroot_and_env /usr/sbin/pkg -c /zroot/$jail clean -a || finalize 1 "Could not clear pkg cache for jail $jail"
         $chroot_and_env /usr/sbin/pkg -c /zroot/$jail fetch -u || finalize 1 "Failed to download packages for jail $jail"
+        /sbin/umount $_mnt_temp_dir/zroot/$jail/.jail_system 2>/dev/null
     done
 }
 
@@ -153,6 +157,8 @@ update_zfs_datasets() {
         /sbin/zfs rename -f $_zpool/$jail $_zpool/ROOT/$_current_be/$jail
         /sbin/mount -aL
 
+        /usr/sbin/service jail start $jail
+
         # /sbin/zfs snapshot $dataset@pre-upgrade-14
         # /sbin/zfs clone $dataset@pre-upgrade-14 $(get_current_BE)
 
@@ -176,6 +182,24 @@ update_zfs_datasets() {
             error_and_blink "[!] You have to reboot to apply changes and restart manually the upgrade."
             finalize 0
         fi
+    fi
+    /usr/sbin/service vultured start
+}
+
+create_and_mount_BE() {
+    _mnt_temp_dir="$1"
+
+    # Lock mongodb to prevent dataset corruption
+    exec_mongo "db.fsyncLock()" > /dev/null
+    /sbin/bectl create -r $new_be || info "BE '$new_be' already exists."
+    exec_mongo "db.fsyncUnlock()" > /dev/null
+    # There is a bug where canmount=off is changed to noauto
+    /sbin/zfs set canmount=off "$(get_root_zpool_name)/ROOT/$new_be/usr"
+
+    /sbin/bectl mount $new_be $_mnt_temp_dir || finalize 1 "Cannot mount BE '$new_be'."
+    if [ $download_only -eq 0 ]; then
+        # There is a bug where subdatasets is not mounted if parent dataset has canmount=off
+        /sbin/mount -t zfs "$(get_root_zpool_name)/ROOT/$new_be/usr/home" $_mnt_temp_dir/usr/home
     fi
 }
 
@@ -221,11 +245,10 @@ clean_and_restart() {
     /bin/rm -rf $temp_dir
     /bin/echo "[-] Done"
 
-    reset_motd
-    add_to_motd "\033[38;5;10mYour system is now on HardenedBSD 14, welcome back!\033[0m"
-
     warn "WARNING: a new Boot Environment was created during the upgrade, please review existing BEs and delete those no longer necessary!"
     /sbin/bectl list -a
+
+    info "[$(date -u -Iseconds)] Upgrade script finished!"
 
     /bin/echo "[+] Rebooting system"
     /sbin/shutdown -r now
@@ -233,58 +256,34 @@ clean_and_restart() {
     exit 0
 }
 
-finalize() {
-    # set default in case err_code is not specified
-    err_code=${1:-0}
-    err_message=$2
-
-    if [ $download_only -eq 0 ]; then
-        /bin/echo "[+] Cleaning temporary dir..."
-        /bin/rm -rf "$temp_dir"
-        /bin/echo "[-] Done."
-
-        if get_BEs | grep -q $new_be; then
-            /bin/echo "[+] Unmounting BE..."
-            /sbin/bectl umount -f $new_be
-            /bin/echo "[-] Done"
-        fi
-    fi
-
-    # remove script from running at start up
-    # /bin/rm -f /etc/cron.d/vulture_update
-
-    if [ -n "$err_message" ]; then
-        if get_BEs | grep -q $new_be; then
-            /bin/echo "[+] Cleaning BE..."
-            for jail in $JAILS_LIST; do
-                /sbin/umount $mnt_temp_dir/zroot/$jail/.jail_system 2>/dev/null
-            done
-            /sbin/umount $mnt_temp_dir/dev $mnt_temp_dir/tmp $mnt_temp_dir/dev/fd $mnt_temp_dir/proc 2>/dev/null
-            /sbin/bectl destroy -F $new_be || error "[!] Unable to destroy BE '$new_be'"
-            /bin/echo "[-] Done"
-        fi
-
-        /usr/local/bin/sudo -u vlt-os /home/vlt-os/env/bin/python /home/vlt-os/vulture_os/manage.py toggle_maintenance --off 2>/dev/null || true
-
-        /bin/echo ""
-        error_and_exit "[!] ${err_message}\n"
-    fi
-
-    exit $err_code
-}
-
 usage() {
     /bin/echo "USAGE ${0} [-y]"
     /bin/echo "OPTIONS:"
     /bin/echo "	-y	start the upgrade whitout asking for user confirmation (implicit consent)"
+    /bin/echo "	-D	only download OS upgrades and packages in BE"
     exit 1
 }
 
-initialize() {
+check_preconditions() {
     if [ "$(/usr/bin/id -u)" != "0" ]; then
         /bin/echo "This script must be run as root" 1>&2
         exit 1
     fi
+    # Show necessary packages to be updated
+    if /usr/sbin/pkg version -qRl '<' | grep 'vulture-' > /dev/null; then
+        /usr/bin/printf "${COLOR_RED}"
+        /usr/sbin/pkg version -qRl '<' | grep 'vulture-'
+        /usr/bin/printf "${COLOR_OFF}"
+        finalize 1 "Some packages are not up to date, please run 'vlt-admin upgrade-pkg' before trying to migrate"
+    fi
+    # Check remaining disk space larger than 8GB
+    if [ "$(/sbin/zpool list -Hpo free)" -lt 8000000000 ]; then
+        finalize 1 "Free disk space is insufficient"
+    fi
+}
+
+initialize() {
+    info "[$(date -u -Iseconds)] Upgrade script started!"
 
     trap finalize INT
 
@@ -325,20 +324,50 @@ initialize() {
     done
 }
 
-check_preconditions() {
-    # Show necessary packages to be updated
-    if /usr/sbin/pkg version -qRl '<' | grep 'vulture-' > /dev/null; then
-        /usr/bin/printf "${COLOR_RED}"
-        /usr/sbin/pkg version -qRl '<' | grep 'vulture-'
-        /usr/bin/printf "${COLOR_OFF}"
-        finalize 1 "Some packages are not up to date, please run 'vlt-admin upgrade-pkg' before trying to migrate"
+finalize() {
+    # set default in case err_code is not specified
+    err_code=${1:-0}
+    err_message=$2
+
+    if [ $download_only -eq 0 ]; then
+        /bin/echo "[+] Cleaning temporary dir..."
+        /bin/rm -rf "$temp_dir"
+        /bin/echo "[-] Done."
     fi
-    # Check remaining disk space larger than 8GB
-    if [ "$(/sbin/zpool list -Hpo free)" -lt 8000000000 ]; then
-        finalize 1 "Free disk space is insufficient"
+
+    if get_BEs | grep -q $new_be; then
+        /bin/echo "[+] Unmounting BE..."
+        /sbin/bectl umount -f $new_be
+        /bin/echo "[-] Done"
     fi
+
+    if [ -n "$err_message" ]; then
+        if get_BEs | grep -q $new_be; then
+            /bin/echo "[+] Cleaning BE..."
+            for jail in $JAILS_LIST; do
+                /sbin/umount $mnt_temp_dir/zroot/$jail/.jail_system 2>/dev/null
+            done
+            /sbin/umount $mnt_temp_dir/dev/fd $mnt_temp_dir/dev $mnt_temp_dir/tmp $mnt_temp_dir/proc 2>/dev/null
+            /sbin/bectl destroy -F $new_be || error "[!] Unable to destroy BE '$new_be'"
+            /bin/echo "[-] Done"
+        fi
+
+        /usr/local/bin/sudo -u vlt-os /home/vlt-os/env/bin/python /home/vlt-os/vulture_os/manage.py toggle_maintenance --off 2>/dev/null || true
+
+        /bin/echo ""
+        error_and_exit "[!] ${err_message}\n"
+    fi
+
+    info "[$(date -u -Iseconds)] Upgrade script finished!"
+    exit $err_code
 }
 
+
+if [ "$(uname -K)" -gt 1400000 ]; then
+    /bin/echo "Your system seems to already be on HBSD14, nothing to do!"
+    reset_motd
+    exit 0
+fi
 
 while getopts "Dy" flag;
 do
@@ -355,11 +384,13 @@ done
 if [ $download_only -eq 1 ]; then
     check_preconditions
     initialize
-    # Small trick to force download of 14-stable update
-    /bin/mkdir -vp /tmp/etc
-    /usr/bin/sed "s/13-stable/14-stable/g" /etc/hbsd-update.conf > /tmp/etc/hbsd-update.conf
-    download_system_update /tmp
-    exit 0
+    mnt_temp_dir=$(mktemp -d)
+    create_and_mount_BE $mnt_temp_dir
+    download_system_update $mnt_temp_dir
+    /sbin/mount -t devfs devfs $mnt_temp_dir/dev
+    download_packages $mnt_temp_dir
+    /sbin/umount $mnt_temp_dir/dev
+    finalize 0
 fi
 
 info "Upgrades of the base system, jails and packages will be installed in the BE '$new_be'."
@@ -377,87 +408,79 @@ if [ $_run_ok -ne 1 ]; then
     esac
 fi
 
-if [ "$(uname -K)" -gt 1400000 ]; then
-    /bin/echo "Your system seems to already be on HBSD14, nothing to do!"
-    reset_motd
-    exit 0
-else
-    if [ -f ${temp_dir}/upgrading ] && [ $_run_ok -eq 1 ]; then
-        log_file=/var/log/upgrade-to-14.log
-        /bin/echo "Output will be sent to $log_file"
+# Automatically continue upgrade if a reboot occured
+if [ -f ${temp_dir}/upgrading ] && [ $_run_ok -eq 1 ]; then
+    log_file=/var/log/upgrade-to-14.log
+    /bin/echo "Output will be sent to $log_file"
 
-        exec 3>&1 4>&2
-        trap 'exec 2>&4 1>&3' 0 1 2 3
-        exec 1>>$log_file 2>&1
-    fi
-
-    check_preconditions
-    initialize
-
-    /bin/echo "Upgrade started!"
-
-    /usr/local/bin/sudo -u vlt-os /home/vlt-os/env/bin/python /home/vlt-os/vulture_os/manage.py toggle_maintenance --on 2>/dev/null || true
-
-    update_zfs_datasets
-
-    /sbin/bectl create -r $new_be || finalize 1 "Cannot create BE '$new_be', delete it manually and restart this script."
-    # There is a bug where canmount=off is changed to noauto
-    /sbin/zfs set canmount=off "$(get_root_zpool_name)/ROOT/$new_be/usr"
-    mnt_temp_dir=$(mktemp -d)
-    /sbin/bectl mount $new_be $mnt_temp_dir || finalize 1 "Cannot mount BE '$new_be'."
-    # There is a bug where subdatasets is not mounted if parent dataset has canmount=off
-    /sbin/mount -t zfs "$(get_root_zpool_name)/ROOT/$new_be/usr/home" $mnt_temp_dir/usr/home
-
-    # Fix pam.d
-    if [ -d $mnt_temp_dir/.jail_system ] && [ ! -h "$mnt_temp_dir/zroot/apache/etc/pam.d" ]; then
-        /bin/rm -vr $mnt_temp_dir/zroot/*/etc/pam.d || finalize 1 "Unable to fix pam.d, are jails datasets mounted?"
-        for jail in apache portal haproxy mongodb rsyslog redis; do
-            /bin/ln -vs ../.jail_system/etc/pam.d $mnt_temp_dir/zroot/$jail/etc/pam.d
-        done
-    fi
-
-    info "[+] Updating host system"
-    download_system_update $mnt_temp_dir
-    update_system $mnt_temp_dir
-    info "[-] Done updating host system"
-
-    for jail in $JAILS_LIST; do
-        info "[+] Updating jail $jail"
-        update_system $mnt_temp_dir $jail
-        info "[-] Done updating jail $jail"
-    done
-
-    # Mounting all needed filesystems
-    /sbin/mount -t devfs devfs $mnt_temp_dir/dev
-    /sbin/mount -t tmpfs tmpfs $mnt_temp_dir/tmp
-    /sbin/mount -t fdescfs fdesc $mnt_temp_dir/dev/fd
-    /sbin/mount -t procfs proc $mnt_temp_dir/proc
-    /sbin/sysctl hardening.harden_rtld=0
-
-    if [ -d $mnt_temp_dir/.jail_system ]; then
-        for jail in $JAILS_LIST; do
-            /sbin/mount -t nullfs $mnt_temp_dir/.jail_system $mnt_temp_dir/zroot/$jail/.jail_system || finalize "Unable to mount .jail_system"
-        done
-    fi
-
-    # download_packages $mnt_temp_dir
-    update_packages $mnt_temp_dir
-
-    /sbin/bectl activate $new_be
-    # restart_and_continue
-
-    if [ $_run_ok -ne 1 ]; then
-        info "Upgrade finished, do you want to reboot now? [yN]: "
-        answer=""
-        read -r answer
-        case "${answer}" in
-            y|Y|yes|Yes|YES)
-            # Do nothing, continue
-            ;;
-            *)  /bin/echo "Reboot canceled."
-                exit 0;
-            ;;
-        esac
-    fi
-    clean_and_restart
+    exec 3>&1 4>&2
+    trap 'exec 2>&4 1>&3' 0 1 2 3
+    exec 1>>$log_file 2>&1
 fi
+
+check_preconditions
+initialize
+
+/usr/local/bin/sudo -u vlt-os /home/vlt-os/env/bin/python /home/vlt-os/vulture_os/manage.py toggle_maintenance --on 2>/dev/null || true
+
+update_zfs_datasets
+
+mnt_temp_dir=$(mktemp -d)
+create_and_mount_BE $mnt_temp_dir
+
+# Fix pam.d
+if [ -d $_mnt_temp_dir/.jail_system ] && [ ! -h "$_mnt_temp_dir/zroot/apache/etc/pam.d" ]; then
+    /bin/rm -vr $_mnt_temp_dir/zroot/*/etc/pam.d || finalize 1 "Unable to fix pam.d, are jails datasets mounted?"
+    for jail in apache portal haproxy mongodb rsyslog redis; do
+        /bin/ln -vs ../.jail_system/etc/pam.d $_mnt_temp_dir/zroot/$jail/etc/pam.d
+    done
+fi
+
+info "[+] Updating host system"
+download_system_update $mnt_temp_dir
+update_system $mnt_temp_dir
+info "[-] Done updating host system"
+
+for jail in $JAILS_LIST; do
+    info "[+] Updating jail $jail"
+    update_system $mnt_temp_dir $jail
+    info "[-] Done updating jail $jail"
+done
+
+# Mounting all needed filesystems
+/sbin/mount -t devfs devfs $mnt_temp_dir/dev
+/sbin/mount -t tmpfs tmpfs $mnt_temp_dir/tmp
+/sbin/mount -t fdescfs fdesc $mnt_temp_dir/dev/fd
+/sbin/mount -t procfs proc $mnt_temp_dir/proc
+/sbin/sysctl hardening.harden_rtld=0
+
+if [ -d $mnt_temp_dir/.jail_system ]; then
+    for jail in $JAILS_LIST; do
+        /sbin/mount -t nullfs $mnt_temp_dir/.jail_system $mnt_temp_dir/zroot/$jail/.jail_system || finalize "Unable to mount .jail_system"
+    done
+fi
+
+# download_packages $mnt_temp_dir
+update_packages $mnt_temp_dir
+
+/sbin/bectl activate -t $new_be
+
+if [ $_run_ok -ne 1 ]; then
+    info "Upgrade finished, do you want to reboot now? [yN]: "
+    answer=""
+    read -r answer
+    case "${answer}" in
+        y|Y|yes|Yes|YES)
+        # Do nothing, continue
+        ;;
+        *)  /bin/echo "Reboot canceled."
+            exit 0;
+        ;;
+    esac
+fi
+
+reset_motd
+/usr/bin/printf "\033[38;5;10mYour system is now on HardenedBSD 14, welcome back!\033[0m\n" >> $mnt_temp_dir/var/run/motd
+
+# restart_and_continue
+clean_and_restart
