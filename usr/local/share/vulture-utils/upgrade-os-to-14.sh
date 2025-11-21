@@ -11,6 +11,7 @@ COLOR_RED='\033[0;31m'
 temp_dir="/var/tmp/update"
 new_be="${SNAPSHOT_PREFIX}HBSD14-$(date -Idate)"
 download_only=0
+auto_reboot=0
 _run_ok=0
 
 download_system_update() {
@@ -20,9 +21,9 @@ download_system_update() {
         /usr/bin/sed -i ".bak" "s/13-stable/14-stable/g" "$_mnt_temp_dir/etc/hbsd-update.conf"
         /home/vlt-adm/system/register_vulture_repos.sh $_mnt_temp_dir
 
-        /bin/echo "[+] Downloading system update"
+        info "[+] Downloading system update"
         /usr/sbin/hbsd-update -d -t "$temp_dir" -T -f -c $_mnt_temp_dir/etc/hbsd-update.conf || finalize 1  "System update download failed."
-        /bin/echo "[-] Done"
+        info "[-] Done"
     else
         info "[+] Upgrade file found, nothing to do."
     fi
@@ -69,16 +70,20 @@ download_packages() {
     $chroot_and_env /usr/sbin/pkg clean -a || finalize 1 "Could not clear pkg cache"
     /bin/echo "[-] Done"
 
-    /bin/echo "[+] Fetching upgrades"
+    info "[+] Fetching host's packages"
     $chroot_and_env /usr/sbin/pkg unlock vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
     $chroot_and_env /usr/sbin/pkg fetch -u || finalize 1 "Failed to download packages"
     $chroot_and_env /usr/sbin/pkg lock vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
-    /bin/echo "[-] Done"
+    info "[-] Done"
 
     for jail in $JAILS_LIST; do
-        /sbin/mount -t nullfs $_mnt_temp_dir/.jail_system $_mnt_temp_dir/zroot/$jail/.jail_system || finalize "Unable to mount .jail_system"
+        /sbin/mount -t nullfs $_mnt_temp_dir/.jail_system $_mnt_temp_dir/zroot/$jail/.jail_system || finalize 1 "Unable to mount .jail_system"
         $chroot_and_env /usr/sbin/pkg -c /zroot/$jail clean -a || finalize 1 "Could not clear pkg cache for jail $jail"
+    
+        /bin/echo "[+] Fetching $jail's packages..."
         $chroot_and_env /usr/sbin/pkg -c /zroot/$jail fetch -u || finalize 1 "Failed to download packages for jail $jail"
+        /bin/echo "[-] Done"
+    
         /sbin/umount $_mnt_temp_dir/zroot/$jail/.jail_system 2>/dev/null
     done
 }
@@ -91,20 +96,20 @@ update_packages() {
     # Delete me
     $chroot_and_env /usr/sbin/pkg bootstrap -f || finalize 1 "Could not bootstrap pkg"
 
-    /bin/echo "[+] Upgrading host system packages"
+    info "[+] Upgrading host system packages"
     $chroot_and_env /usr/sbin/pkg unlock vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
     $chroot_and_env /usr/sbin/pkg upgrade -f || finalize 1 "Failed to upgrade packages"
     $chroot_and_env /usr/sbin/pkg lock vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
-    /bin/echo "[-] Done"
+    info "[-] Done"
 
     /bin/echo "[+] Cleaning pkg cache..."
     $chroot_and_env /usr/sbin/pkg clean -a
     /bin/echo "[-] Done"
 
     for jail in $JAILS_LIST; do
-        /bin/echo "[+] Upgrading $jail's packages"
+        info "[+] Upgrading $jail's packages"
         $chroot_and_env /usr/sbin/pkg -c /zroot/$jail upgrade || finalize 1 "Failed to upgrade packages on jail $jail"
-        /bin/echo "[-] Done"
+        info "[-] Done"
 
         /bin/echo "[+] Cleaning $jail pkg cache..."
         $chroot_and_env /usr/sbin/pkg -c /zroot/$jail clean -a
@@ -123,7 +128,7 @@ update_zfs_datasets() {
     for jail in $JAILS_LIST; do
         # Check name of zfs jails datasets
         if ! zfs_dataset_exists ROOT/$_current_be/$jail; then
-            warn "Jail $jail's dataset is in legacy format, it will be renamed and node will need to restart."
+            warn "Jail $jail's dataset is in legacy format, it will be renamed and node will need to reboot."
             if [ $_run_ok -ne 1 ]; then
                 /usr/bin/printf "Do you want to continue anyway? [yN]: "
                 answer=""
@@ -132,7 +137,8 @@ update_zfs_datasets() {
                     y|Y|yes|Yes|YES)
                     # Do nothing, continue
                     ;;
-                    *)  /bin/echo "Upgrade canceled."
+                    *)  /usr/sbin/service vultured start
+                        /bin/echo "Upgrade canceled."
                         exit 0;
                     ;;
                 esac
@@ -141,8 +147,7 @@ update_zfs_datasets() {
             continue
         fi
 
-        # /sbin/zfs list -oname,mountpoint,canmount,mounted
-        # if /sbin/zfs list -oname | grep -q "^$_zpool/ROOT/$_current_be/$jail\$"; then continue; fi
+        /home/vlt-os/env/bin/python /home/vlt-os/vulture_os/manage.py toggle_maintenance --on 2>/dev/null
 
         # Need to stop jail cleanly
         /usr/sbin/service jail stop $jail
@@ -151,39 +156,40 @@ update_zfs_datasets() {
             /sbin/zfs set canmount=noauto $_zpool/${jail}$dataset
         done
 
-        if [ "$jail" = "rsyslog" ]; then
-            /sbin/umount /usr/local/etc/filebeat /zroot/apache/usr/local/etc/filebeat
-        fi
+        /sbin/umount -at nullfs 2>/dev/null
+        # /sbin/umount $(mount -lt nullfs | awk "on /zroot\/$jail/ {print \$3}") 2>/dev/null
+        # /sbin/umount /zroot/$jail/.jail_system 2>/dev/null
+        # /sbin/umount /zroot/$jail/var/db/pki 2>/dev/null
+        # if [ "$jail" = "rsyslog" ]; then
+        #     /sbin/umount /usr/local/etc/filebeat /zroot/apache/usr/local/etc/filebeat
+        # fi
         /sbin/zfs rename -f $_zpool/$jail $_zpool/ROOT/$_current_be/$jail
-        /sbin/mount -aL
 
-        /usr/sbin/service jail start $jail
-
-        # /sbin/zfs snapshot $dataset@pre-upgrade-14
-        # /sbin/zfs clone $dataset@pre-upgrade-14 $(get_current_BE)
-
-        _need_reboot=1
+        # _need_reboot=1
     done
 
     # Rename home dataset
     if ! zfs_dataset_exists ROOT/$_current_be/usr/home; then
-        /sbin/umount /zroot/rsyslog/home/vlt-os/vulture_os/services/rsyslogd/config /zroot/portal/home/vlt-os /zroot/apache/home/vlt-os
+        /sbin/umount /zroot/rsyslog/home/vlt-os/vulture_os/services/rsyslogd/config /zroot/portal/home/vlt-os /zroot/apache/home/vlt-os 2>/dev/null
         /sbin/zfs set canmount=noauto $_zpool/usr/home
         /sbin/zfs rename -f $_zpool/usr $_zpool/ROOT/$_current_be/usr
-        /sbin/mount -aL
 
-        _need_reboot=1
+        # _need_reboot=1
     fi
 
-    if [ $_need_reboot -eq 1 ]; then
-        if [ $_run_ok -eq 1 ]; then
-            restart_and_continue
-        else
-            error_and_blink "[!] You have to reboot to apply changes and restart manually the upgrade."
-            finalize 0
-        fi
-    fi
+    /sbin/mount -aL
+    /home/vlt-os/env/bin/python /home/vlt-os/vulture_os/manage.py toggle_maintenance --off 2>/dev/null
     /usr/sbin/service vultured start
+    /usr/sbin/service jail start
+
+    # if [ $_need_reboot -eq 1 ]; then
+    #     if [ $_run_ok -eq 1 ]; then
+    #         restart_and_continue
+    #     else
+    #         error_and_blink "[!] You have to reboot to apply changes and restart manually the upgrade."
+    #         finalize 0
+    #     fi
+    # fi
 }
 
 create_and_mount_BE() {
@@ -259,8 +265,9 @@ clean_and_restart() {
 usage() {
     /bin/echo "USAGE ${0} [-y]"
     /bin/echo "OPTIONS:"
-    /bin/echo "	-y	start the upgrade whitout asking for user confirmation (implicit consent)"
     /bin/echo "	-D	only download OS upgrades and packages in BE"
+    /bin/echo "	-r	auto reboot after upgrade has complete"
+    /bin/echo "	-y	start the upgrade whitout asking for user confirmation (implicit consent)"
     exit 1
 }
 
@@ -337,28 +344,34 @@ finalize() {
 
     if get_BEs | grep -q $new_be; then
         /bin/echo "[+] Unmounting BE..."
+        for jail in $JAILS_LIST; do
+            /sbin/umount $mnt_temp_dir/zroot/$jail/.jail_system 2>/dev/null
+        done
+        /sbin/umount $mnt_temp_dir/dev/fd $mnt_temp_dir/dev $mnt_temp_dir/tmp $mnt_temp_dir/proc 2>/dev/null
         /sbin/bectl umount -f $new_be
         /bin/echo "[-] Done"
     fi
 
+    /home/vlt-os/env/bin/python /home/vlt-os/vulture_os/manage.py toggle_maintenance --off 2>/dev/null
+
     if [ -n "$err_message" ]; then
         if get_BEs | grep -q $new_be; then
             /bin/echo "[+] Cleaning BE..."
-            for jail in $JAILS_LIST; do
-                /sbin/umount $mnt_temp_dir/zroot/$jail/.jail_system 2>/dev/null
-            done
-            /sbin/umount $mnt_temp_dir/dev/fd $mnt_temp_dir/dev $mnt_temp_dir/tmp $mnt_temp_dir/proc 2>/dev/null
             /sbin/bectl destroy -F $new_be || error "[!] Unable to destroy BE '$new_be'"
             /bin/echo "[-] Done"
         fi
-
-        /usr/local/bin/sudo -u vlt-os /home/vlt-os/env/bin/python /home/vlt-os/vulture_os/manage.py toggle_maintenance --off 2>/dev/null || true
 
         /bin/echo ""
         error_and_exit "[!] ${err_message}\n"
     fi
 
     info "[$(date -u -Iseconds)] Upgrade script finished!"
+
+    if has_pending_BE && [ $auto_reboot -eq 1 ]; then
+        /bin/echo "[+] Rebooting system"
+        /sbin/shutdown -r now
+    fi
+
     exit $err_code
 }
 
@@ -374,6 +387,8 @@ do
     case "${flag}" in
         D) download_only=1;
         ;;
+        r) auto_reboot=1;
+        ;;
         y) _run_ok=1;
         ;;
         *) usage;
@@ -384,6 +399,22 @@ done
 if [ $download_only -eq 1 ]; then
     check_preconditions
     initialize
+    if ! zfs_dataset_exists ROOT/$(get_current_BE)/usr/home; then
+        warn "ZFS dataset is in legacy format, cannot download only needed files."
+        error "If you continue, needed changes will be applied and node will need to reboot."
+        if [ $_run_ok -ne 1 ]; then
+            /usr/bin/printf "Do you want to continue anyway? [yN]: "
+            answer=""
+            read -r answer
+            case "${answer}" in
+                y|Y|yes|Yes|YES) update_zfs_datasets
+                ;;
+                *)  /bin/echo "Upgrade canceled."
+                    exit 0;
+                ;;
+            esac
+        fi
+    fi
     mnt_temp_dir=$(mktemp -d)
     create_and_mount_BE $mnt_temp_dir
     download_system_update $mnt_temp_dir
@@ -421,24 +452,23 @@ fi
 check_preconditions
 initialize
 
-/usr/local/bin/sudo -u vlt-os /home/vlt-os/env/bin/python /home/vlt-os/vulture_os/manage.py toggle_maintenance --on 2>/dev/null || true
-
 update_zfs_datasets
 
 mnt_temp_dir=$(mktemp -d)
 create_and_mount_BE $mnt_temp_dir
 
 # Fix pam.d
-if [ -d $_mnt_temp_dir/.jail_system ] && [ ! -h "$_mnt_temp_dir/zroot/apache/etc/pam.d" ]; then
-    /bin/rm -vr $_mnt_temp_dir/zroot/*/etc/pam.d || finalize 1 "Unable to fix pam.d, are jails datasets mounted?"
+if [ -d $mnt_temp_dir/.jail_system ] && [ ! -h "$mnt_temp_dir/zroot/apache/etc/pam.d" ]; then
+    /bin/rm -vr $mnt_temp_dir/zroot/*/etc/pam.d || finalize 1 "Unable to fix pam.d, are jails datasets mounted?"
     for jail in apache portal haproxy mongodb rsyslog redis; do
-        /bin/ln -vs ../.jail_system/etc/pam.d $_mnt_temp_dir/zroot/$jail/etc/pam.d
+        /bin/ln -vs ../.jail_system/etc/pam.d $mnt_temp_dir/zroot/$jail/etc/pam.d
     done
 fi
 
 info "[+] Updating host system"
 download_system_update $mnt_temp_dir
 update_system $mnt_temp_dir
+chmod 1777 $mnt_temp_dir/tmp $mnt_temp_dir/var/tmp
 info "[-] Done updating host system"
 
 for jail in $JAILS_LIST; do
@@ -463,24 +493,11 @@ fi
 # download_packages $mnt_temp_dir
 update_packages $mnt_temp_dir
 
-/sbin/bectl activate -t $new_be
-
-if [ $_run_ok -ne 1 ]; then
-    info "Upgrade finished, do you want to reboot now? [yN]: "
-    answer=""
-    read -r answer
-    case "${answer}" in
-        y|Y|yes|Yes|YES)
-        # Do nothing, continue
-        ;;
-        *)  /bin/echo "Reboot canceled."
-            exit 0;
-        ;;
-    esac
-fi
-
 reset_motd
-/usr/bin/printf "\033[38;5;10mYour system is now on HardenedBSD 14, welcome back!\033[0m\n" >> $mnt_temp_dir/var/run/motd
+/usr/bin/printf "\033[38;5;10mYour system is now on HardenedBSD 14, welcome back!\033[0m\n" >> $mnt_temp_dir/etc/motd.template
 
+/sbin/bectl activate -t $new_be || finalize 1 "Unable to activate BE, try to do it manually."
+
+finalize 0
 # restart_and_continue
-clean_and_restart
+# clean_and_restart
