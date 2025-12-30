@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+### Changed
+- [COMMON] Use new mongodb `connect` command to interact with all versions of DB
 
 
 ## [1.0.4] - 2025-10-29

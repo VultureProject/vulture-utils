@@ -53,16 +53,12 @@ error_and_blink() {
 ######################
 exec_mongo() {
     _command="$1"
-    _hostname="$(hostname)"
 
     if ! /usr/sbin/jls | /usr/bin/grep -q mongodb; then
         return 1
     fi
-    if [ -z "$_hostname" ] || [ -z "${_command}" ]; then
-        return 1
-    fi
 
-    /usr/sbin/jexec mongodb mongo --ssl --sslCAFile /var/db/pki/ca.pem --sslPEMKeyFile /var/db/pki/node.pem "${_hostname}:9091" -eval "${_command}"
+    /usr/sbin/jexec mongodb connect -eval "${_command}"
     return $?
 }
 
