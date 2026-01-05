@@ -120,15 +120,13 @@ update_packages() {
 update_zfs_datasets() {
     _zpool="$(get_root_zpool_name)"
     _current_be="$(get_current_BE)"
-    _need_reboot=0
 
     # Rename jails datasets
     /usr/sbin/sysrc zfs_enable=YES
-    /usr/sbin/service vultured stop
     for jail in $JAILS_LIST; do
         # Check name of zfs jails datasets
         if ! zfs_dataset_exists ROOT/$_current_be/$jail; then
-            warn "Jail $jail's dataset is in legacy format, it will be renamed and node will need to reboot."
+            warn "Jail $jail's dataset is in legacy format, it will be renamed. No service interruption needed."
             if [ $_run_ok -ne 1 ]; then
                 /usr/bin/printf "Do you want to continue anyway? [yN]: "
                 answer=""
@@ -137,8 +135,7 @@ update_zfs_datasets() {
                     y|Y|yes|Yes|YES)
                     # Do nothing, continue
                     ;;
-                    *)  /usr/sbin/service vultured start
-                        /bin/echo "Upgrade canceled."
+                    *)  /bin/echo "Upgrade canceled."
                         exit 0;
                     ;;
                 esac
@@ -147,49 +144,17 @@ update_zfs_datasets() {
             continue
         fi
 
-        /home/vlt-os/env/bin/python /home/vlt-os/vulture_os/manage.py toggle_maintenance --on 2>/dev/null
-
-        # Need to stop jail cleanly
-        /usr/sbin/service jail stop $jail
-
         for dataset in "" /usr /var /var/db /var/log; do
             /sbin/zfs set canmount=noauto $_zpool/${jail}$dataset
         done
-
-        /sbin/umount -at nullfs 2>/dev/null
-        # /sbin/umount $(mount -lt nullfs | awk "on /zroot\/$jail/ {print \$3}") 2>/dev/null
-        # /sbin/umount /zroot/$jail/.jail_system 2>/dev/null
-        # /sbin/umount /zroot/$jail/var/db/pki 2>/dev/null
-        # if [ "$jail" = "rsyslog" ]; then
-        #     /sbin/umount /usr/local/etc/filebeat /zroot/apache/usr/local/etc/filebeat
-        # fi
-        /sbin/zfs rename -f $_zpool/$jail $_zpool/ROOT/$_current_be/$jail
-
-        # _need_reboot=1
+        /sbin/zfs rename -u $_zpool/$jail $_zpool/ROOT/$_current_be/$jail
     done
 
     # Rename home dataset
     if ! zfs_dataset_exists ROOT/$_current_be/usr/home; then
-        /sbin/umount /zroot/rsyslog/home/vlt-os/vulture_os/services/rsyslogd/config /zroot/portal/home/vlt-os /zroot/apache/home/vlt-os 2>/dev/null
         /sbin/zfs set canmount=noauto $_zpool/usr/home
-        /sbin/zfs rename -f $_zpool/usr $_zpool/ROOT/$_current_be/usr
-
-        # _need_reboot=1
+        /sbin/zfs rename -u $_zpool/usr $_zpool/ROOT/$_current_be/usr
     fi
-
-    /sbin/mount -aL
-    /home/vlt-os/env/bin/python /home/vlt-os/vulture_os/manage.py toggle_maintenance --off 2>/dev/null
-    /usr/sbin/service vultured start
-    /usr/sbin/service jail start
-
-    # if [ $_need_reboot -eq 1 ]; then
-    #     if [ $_run_ok -eq 1 ]; then
-    #         restart_and_continue
-    #     else
-    #         error_and_blink "[!] You have to reboot to apply changes and restart manually the upgrade."
-    #         finalize 0
-    #     fi
-    # fi
 }
 
 create_and_mount_BE() {
@@ -352,8 +317,6 @@ finalize() {
         /bin/echo "[-] Done"
     fi
 
-    /home/vlt-os/env/bin/python /home/vlt-os/vulture_os/manage.py toggle_maintenance --off 2>/dev/null
-
     if [ -n "$err_message" ]; then
         if get_BEs | grep -q $new_be; then
             /bin/echo "[+] Cleaning BE..."
@@ -400,22 +363,7 @@ done
 if [ $download_only -eq 1 ]; then
     check_preconditions
     initialize
-    if ! zfs_dataset_exists ROOT/$(get_current_BE)/usr/home; then
-        warn "ZFS dataset is in legacy format, cannot download only needed files."
-        error "If you continue, needed changes will be applied and node will need to reboot."
-        if [ $_run_ok -ne 1 ]; then
-            /usr/bin/printf "Do you want to continue anyway? [yN]: "
-            answer=""
-            read -r answer
-            case "${answer}" in
-                y|Y|yes|Yes|YES) update_zfs_datasets
-                ;;
-                *)  /bin/echo "Upgrade canceled."
-                    exit 0;
-                ;;
-            esac
-        fi
-    fi
+    update_zfs_datasets
     mnt_temp_dir=$(mktemp -d)
     create_and_mount_BE $mnt_temp_dir
     download_system_update $mnt_temp_dir
