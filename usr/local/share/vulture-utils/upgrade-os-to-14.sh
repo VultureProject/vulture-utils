@@ -57,31 +57,33 @@ update_system() {
 download_packages() {
     _mnt_temp_dir="$1"
 
-    chroot_and_env="/usr/sbin/chroot $_mnt_temp_dir /usr/bin/env IGNORE_OSVERSION=yes ASSUME_ALWAYS_YES=yes"
-    if [ $download_only -eq 1 ]; then
-        chroot_and_env="$chroot_and_env ABI=FreeBSD:14:amd64"
-    fi
+    pkg_env="/usr/bin/env IGNORE_OSVERSION=yes ASSUME_ALWAYS_YES=yes"
+    pkg_args="-c $_mnt_temp_dir -o ABI=FreeBSD:14:amd64"
 
     /bin/echo "[+] Updating root pkg repository catalogue"
-    $chroot_and_env /usr/sbin/pkg update -f || finalize 1 "Could not update list of packages"
+    $pkg_env /usr/sbin/pkg $pkg_args update -f || finalize 1 "Could not update list of packages"
     /bin/echo "[-] Done"
 
     /bin/echo "[+] Clear pkg cache before fetching"
-    $chroot_and_env /usr/sbin/pkg clean -a || finalize 1 "Could not clear pkg cache"
+    $pkg_env /usr/sbin/pkg $pkg_args clean -a || finalize 1 "Could not clear pkg cache"
     /bin/echo "[-] Done"
 
     info "[+] Fetching host's packages"
-    $chroot_and_env /usr/sbin/pkg unlock vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
-    $chroot_and_env /usr/sbin/pkg fetch -u || finalize 1 "Failed to download packages"
-    $chroot_and_env /usr/sbin/pkg lock vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
+    $pkg_env /usr/sbin/pkg $pkg_args unlock vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
+    $pkg_env /usr/sbin/pkg $pkg_args fetch -u || finalize 1 "Failed to download packages"
+    $pkg_env /usr/sbin/pkg $pkg_args lock vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
     info "[-] Done"
 
     for jail in $JAILS_LIST; do
-        /sbin/mount -t nullfs $_mnt_temp_dir/.jail_system $_mnt_temp_dir/zroot/$jail/.jail_system || finalize 1 "Unable to mount .jail_system"
-        $chroot_and_env /usr/sbin/pkg -c /zroot/$jail clean -a || finalize 1 "Could not clear pkg cache for jail $jail"
-    
+        if [ -d $_mnt_temp_dir/.jail_system ]; then
+            /sbin/mount -t nullfs $_mnt_temp_dir/.jail_system $_mnt_temp_dir/zroot/$jail/.jail_system || finalize 1 "Unable to mount .jail_system"
+        fi
+
+        pkg_args="-c $_mnt_temp_dir/zroot/$jail -o ABI=FreeBSD:14:amd64"
+
+        $pkg_env /usr/sbin/pkg $pkg_args clean -a || finalize 1 "Could not clear pkg cache for jail $jail"    
         /bin/echo "[+] Fetching $jail's packages..."
-        $chroot_and_env /usr/sbin/pkg -c /zroot/$jail fetch -u || finalize 1 "Failed to download packages for jail $jail"
+        $pkg_env /usr/sbin/pkg $pkg_args fetch -u || finalize 1 "Failed to download packages for jail $jail"
         /bin/echo "[-] Done"
     
         /sbin/umount $_mnt_temp_dir/zroot/$jail/.jail_system 2>/dev/null
@@ -91,28 +93,31 @@ download_packages() {
 update_packages() {
     _mnt_temp_dir="$1"
 
-    chroot_and_env="/usr/sbin/chroot $_mnt_temp_dir /usr/bin/env IGNORE_OSVERSION=yes ASSUME_ALWAYS_YES=yes"
+    pkg_env="/usr/bin/env IGNORE_OSVERSION=yes ASSUME_ALWAYS_YES=yes"
+    pkg_args="-c $_mnt_temp_dir"
 
     # Delete me
-    $chroot_and_env /usr/local/sbin/pkg-static bootstrap -f || finalize 1 "Could not bootstrap pkg"
+    $pkg_env /usr/sbin/pkg $pkg_args bootstrap -f || finalize 1 "Could not bootstrap pkg"
 
     info "[+] Upgrading host system packages"
-    $chroot_and_env /usr/local/sbin/pkg-static unlock vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
-    $chroot_and_env /usr/local/sbin/pkg-static upgrade -f || finalize 1 "Failed to upgrade packages"
-    $chroot_and_env /usr/local/sbin/pkg-static lock vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
+    $pkg_env /usr/sbin/pkg $pkg_args unlock vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
+    $pkg_env /usr/sbin/pkg $pkg_args upgrade -f || finalize 1 "Failed to upgrade packages"
+    $pkg_env /usr/sbin/pkg $pkg_args lock vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
     info "[-] Done"
 
     /bin/echo "[+] Cleaning pkg cache..."
-    $chroot_and_env /usr/local/sbin/pkg-static clean -a
+    $pkg_env /usr/sbin/pkg $pkg_args clean -a
     /bin/echo "[-] Done"
 
     for jail in $JAILS_LIST; do
+        pkg_args="-c $_mnt_temp_dir/zroot/$jail"
+
         info "[+] Upgrading $jail's packages"
-        $chroot_and_env /usr/local/sbin/pkg-static -c /zroot/$jail upgrade || finalize 1 "Failed to upgrade packages on jail $jail"
+        $pkg_env /usr/sbin/pkg $pkg_args upgrade || finalize 1 "Failed to upgrade packages on jail $jail"
         info "[-] Done"
 
         /bin/echo "[+] Cleaning $jail pkg cache..."
-        $chroot_and_env /usr/local/sbin/pkg-static -c /zroot/$jail clean -a
+        $pkg_env /usr/sbin/pkg $pkg_args clean -a
         /bin/echo "[-] Done"
     done
 }
@@ -151,7 +156,7 @@ update_zfs_datasets() {
     done
 
     # Rename home dataset
-    if ! zfs_dataset_exists ROOT/$_current_be/usr/home; then
+    if ! zfs_dataset_exists ROOT/$_current_be/usr/home && ! zfs_dataset_exists ROOT/$_current_be/home; then
         /sbin/zfs set canmount=noauto $_zpool/usr/home
         /sbin/zfs rename -u $_zpool/usr $_zpool/ROOT/$_current_be/usr
     fi
@@ -324,8 +329,7 @@ finalize() {
             /bin/echo "[-] Done"
         fi
 
-        /bin/echo ""
-        error_and_exit "[!] ${err_message}\n"
+        error_and_exit "\n[!] ${err_message}\n"
     fi
 
     info "[$(date -u -Iseconds)] Upgrade script finished!"
