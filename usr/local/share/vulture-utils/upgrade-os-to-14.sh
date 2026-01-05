@@ -332,8 +332,8 @@ finalize() {
 
     # has_pending_BE return 1 if there is a pending BE
     if ! has_pending_BE && [ $auto_reboot -eq 1 ]; then
-        /bin/echo "[+] Rebooting system"
-        /sbin/shutdown -r now
+        /bin/echo "[+] Rebooting system in 30 seconds"
+        /sbin/shutdown -r +30s
     fi
 
     exit $err_code
@@ -360,32 +360,21 @@ do
     esac
 done
 
-if [ $download_only -eq 1 ]; then
-    check_preconditions
-    initialize
-    update_zfs_datasets
-    mnt_temp_dir=$(mktemp -d)
-    create_and_mount_BE $mnt_temp_dir
-    download_system_update $mnt_temp_dir
-    /sbin/mount -t devfs devfs $mnt_temp_dir/dev
-    download_packages $mnt_temp_dir
-    /sbin/umount $mnt_temp_dir/dev
-    finalize 0
-fi
-
-info "Upgrades of the base system, jails and packages will be installed in the BE '$new_be'."
-if [ $_run_ok -ne 1 ]; then
-    /usr/bin/printf "Do you want to upgrade your node? [yN]: "
-    answer=""
-    read -r answer
-    case "${answer}" in
-        y|Y|yes|Yes|YES)
-        # Do nothing, continue
-        ;;
-        *)  /bin/echo "Upgrade canceled."
-            exit 0;
-        ;;
-    esac
+if [ $download_only -eq 0 ]; then
+    info "Upgrades of the base system, jails and packages will be installed in the BE '$new_be'."
+    if [ $_run_ok -ne 1 ]; then
+        /usr/bin/printf "Do you want to upgrade your node? [yN]: "
+        answer=""
+        read -r answer
+        case "${answer}" in
+            y|Y|yes|Yes|YES)
+            # Do nothing, continue
+            ;;
+            *)  /bin/echo "Upgrade canceled."
+                exit 0;
+            ;;
+        esac
+    fi
 fi
 
 # Automatically continue upgrade if a reboot occured
@@ -406,47 +395,52 @@ update_zfs_datasets
 mnt_temp_dir=$(mktemp -d)
 create_and_mount_BE $mnt_temp_dir
 
-# Fix pam.d
-if [ -d $mnt_temp_dir/.jail_system ] && [ ! -h "$mnt_temp_dir/zroot/apache/etc/pam.d" ]; then
-    /bin/rm -vr $mnt_temp_dir/zroot/*/etc/pam.d || finalize 1 "Unable to fix pam.d, are jails datasets mounted?"
-    for jail in apache portal haproxy mongodb rsyslog redis; do
-        /bin/ln -vs ../.jail_system/etc/pam.d $mnt_temp_dir/zroot/$jail/etc/pam.d
-    done
+if [ $download_only -eq 0 ]; then
+    # Fix pam.d
+    if [ -d $mnt_temp_dir/.jail_system ] && [ ! -h "$mnt_temp_dir/zroot/apache/etc/pam.d" ]; then
+        /bin/rm -vr $mnt_temp_dir/zroot/*/etc/pam.d || finalize 1 "Unable to fix pam.d, are jails datasets mounted?"
+        for jail in apache portal haproxy mongodb rsyslog redis; do
+            /bin/ln -vs ../.jail_system/etc/pam.d $mnt_temp_dir/zroot/$jail/etc/pam.d
+        done
+    fi
 fi
 
-info "[+] Updating host system"
 download_system_update $mnt_temp_dir
-update_system $mnt_temp_dir
-chmod 1777 $mnt_temp_dir/tmp $mnt_temp_dir/var/tmp
-info "[-] Done updating host system"
 
-for jail in $JAILS_LIST; do
-    info "[+] Updating jail $jail"
-    update_system $mnt_temp_dir $jail
-    info "[-] Done updating jail $jail"
-done
+if [ $download_only -eq 0 ]; then
+    info "[+] Updating host system"
+    update_system $mnt_temp_dir
+    chmod 1777 $mnt_temp_dir/tmp $mnt_temp_dir/var/tmp
+    info "[-] Done updating host system"
 
-# Mounting all needed filesystems
-/sbin/mount -t devfs devfs $mnt_temp_dir/dev
-/sbin/mount -t tmpfs tmpfs $mnt_temp_dir/tmp
-/sbin/mount -t fdescfs fdesc $mnt_temp_dir/dev/fd
-/sbin/mount -t procfs proc $mnt_temp_dir/proc
-/sbin/sysctl hardening.harden_rtld=0
-
-if [ -d $mnt_temp_dir/.jail_system ]; then
     for jail in $JAILS_LIST; do
-        /sbin/mount -t nullfs $mnt_temp_dir/.jail_system $mnt_temp_dir/zroot/$jail/.jail_system || finalize "Unable to mount .jail_system"
+        info "[+] Updating jail $jail"
+        update_system $mnt_temp_dir $jail
+        info "[-] Done updating jail $jail"
     done
+
+    # Mounting all needed filesystems
+    /sbin/mount -t devfs devfs $mnt_temp_dir/dev
+    /sbin/mount -t tmpfs tmpfs $mnt_temp_dir/tmp
+    /sbin/mount -t fdescfs fdesc $mnt_temp_dir/dev/fd
+    /sbin/mount -t procfs proc $mnt_temp_dir/proc
+    /sbin/sysctl hardening.harden_rtld=0
+
+    if [ -d $mnt_temp_dir/.jail_system ]; then
+        for jail in $JAILS_LIST; do
+            /sbin/mount -t nullfs $mnt_temp_dir/.jail_system $mnt_temp_dir/zroot/$jail/.jail_system || finalize "Unable to mount .jail_system"
+        done
+    fi
+
+    update_packages $mnt_temp_dir
+
+    reset_motd
+    /usr/bin/printf "\033[38;5;10mYour system is now on HardenedBSD 14, welcome back!\033[0m\n" >> $mnt_temp_dir/etc/motd.template
+
+    /sbin/bectl activate -t $new_be || finalize 1 "Unable to activate BE, try to do it manually."
+else
+    /sbin/mount -t devfs devfs $mnt_temp_dir/dev
+    download_packages $mnt_temp_dir
 fi
-
-# download_packages $mnt_temp_dir
-update_packages $mnt_temp_dir
-
-reset_motd
-/usr/bin/printf "\033[38;5;10mYour system is now on HardenedBSD 14, welcome back!\033[0m\n" >> $mnt_temp_dir/etc/motd.template
-
-/sbin/bectl activate -t $new_be || finalize 1 "Unable to activate BE, try to do it manually."
 
 finalize 0
-# restart_and_continue
-# clean_and_restart
