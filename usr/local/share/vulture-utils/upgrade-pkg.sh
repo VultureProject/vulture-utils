@@ -243,6 +243,25 @@ for jail in "haproxy" "redis" "mongodb" "rsyslog" ; do
 
         /bin/echo "[+] Updating jail $jail packages..."
         IGNORE_OSVERSION="yes" /usr/sbin/pkg -j "$jail" update -f || finalize 1 "Could not update list of packages for jail ${jail}"
+
+        case "$jail" in
+            rsyslog)
+                rsyslog_need_restart="$(/usr/sbin/pkg upgrade -n vulture-rsyslog 2>&1 >/dev/null; echo $?)"
+                [ "$rsyslog_need_restart" -eq 1 ] || rsyslog_need_restart="$(/usr/sbin/pkg -j rsyslog upgrade -ng "*rsyslog*" 2>&1 >/dev/null; echo $?)"
+                filebeat_need_restart="$(/usr/sbin/pkg -j rsyslog upgrade -ng "*beat*" 2>&1 >/dev/null; echo $?)"
+                ;;
+            mongodb)
+                mongodb_need_restart="$(/usr/sbin/pkg -j mongodb upgrade -ng "mongodb*" 2>&1 >/dev/null; echo $?)"
+                ;;
+            redis)
+                redis_need_restart="$(/usr/sbin/pkg -j redis upgrade -ng "redis*" 2>&1 >/dev/null; echo $?)"
+                ;;
+            haproxy)
+                haproxy_need_restart="$(/usr/sbin/pkg upgrade -n vulture-haproxy 2>&1 >/dev/null; echo $?)"
+                [ "$haproxy_need_restart" -eq 1 ] || haproxy_need_restart="$(/usr/sbin/pkg -j haproxy upgrade -ng "*haproxy*" 2>&1 >/dev/null; echo $?)"
+                ;;
+        esac
+
         # shellcheck disable=SC2086
         IGNORE_OSVERSION="yes" /usr/sbin/pkg -j "$jail" upgrade ${_pkg_options} -y || finalize 1 "Could not upgrade packages for jail ${jail}"
         echo "[-] Ok."
@@ -254,39 +273,31 @@ for jail in "haproxy" "redis" "mongodb" "rsyslog" ; do
         echo "[-] Ok."
 
         echo "[+] Restarting services..."
-        case "$jail" in
-            rsyslog)
-                /usr/sbin/jexec "$jail" /usr/sbin/service rsyslogd restart
-                /usr/sbin/jexec "$jail" /usr/sbin/service filebeat restart
-                ;;
-            mongodb)
-                /usr/sbin/jexec "$jail" /usr/sbin/service mongod restart
-                # TODO Force disable pageexec and mprotect on the mongo executable
-                # there seems to be a bug currently with secadm when rules are pre-loaded on executables in packages
-                # which is the case for latest mongodb36-3.6.23
-                /usr/sbin/jexec "$jail" /usr/sbin/hbsdcontrol pax disable pageexec /usr/local/bin/mongo
-                /usr/sbin/jexec "$jail" /usr/sbin/hbsdcontrol pax disable mprotect /usr/local/bin/mongo
-                ;;
-            redis)
-                /usr/sbin/jexec "$jail" /usr/sbin/service sentinel stop
-                /usr/sbin/jexec "$jail" /usr/sbin/service redis restart
-                /usr/sbin/jexec "$jail" /usr/sbin/service sentinel start
-                ;;
-            haproxy)
-                if /usr/sbin/jexec "$jail" /usr/sbin/service haproxy status > /dev/null ; then
-                    # Reload gracefully
-                    /bin/echo "[*] reloading haproxy service..."
-                    /usr/sbin/jexec "$jail" /usr/sbin/service haproxy reload
-                else
-                    # Start service
-                    /bin/echo "[*] starting haproxy service..."
-                    /usr/sbin/jexec "$jail" /usr/sbin/service haproxy start
-                fi
-                ;;
-            *)
-                /usr/sbin/jexec "$jail" /usr/sbin/service "$jail" restart
-                ;;
-        esac
+        if [ "$rsyslog_need_restart" -eq 1 ]; then
+            /usr/sbin/jexec rsyslog /usr/sbin/service rsyslogd restart
+        fi
+        if [ "$filebeat_need_restart" -eq 1 ]; then
+            /usr/sbin/jexec rsyslog /usr/sbin/service filebeat restart
+        fi
+        if [ "$mongodb_need_restart" -eq 1 ]; then
+            /usr/sbin/jexec mongodb /usr/sbin/service mongod restart
+        fi
+        if [ "$redis_need_restart" -eq 1 ]; then
+            /usr/sbin/jexec redis /usr/sbin/service sentinel stop
+            /usr/sbin/jexec redis /usr/sbin/service redis restart
+            /usr/sbin/jexec redis /usr/sbin/service sentinel start
+        fi
+        if [ "$haproxy_need_restart" -eq 1 ]; then
+            if /usr/sbin/jexec haproxy /usr/sbin/service haproxy status > /dev/null ; then
+                # Reload gracefully
+                /bin/echo "[*] reloading haproxy service..."
+                /usr/sbin/jexec haproxy /usr/sbin/service haproxy reload
+            else
+                # Start service
+                /bin/echo "[*] starting haproxy service..."
+                /usr/sbin/jexec haproxy /usr/sbin/service haproxy start
+            fi
+        fi
         echo "[-] Ok."
         echo "[-] $jail updated."
     fi
