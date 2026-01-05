@@ -94,25 +94,25 @@ update_packages() {
     chroot_and_env="/usr/sbin/chroot $_mnt_temp_dir /usr/bin/env IGNORE_OSVERSION=yes ASSUME_ALWAYS_YES=yes"
 
     # Delete me
-    $chroot_and_env /usr/sbin/pkg bootstrap -f || finalize 1 "Could not bootstrap pkg"
+    $chroot_and_env /usr/local/sbin/pkg-static bootstrap -f || finalize 1 "Could not bootstrap pkg"
 
     info "[+] Upgrading host system packages"
-    $chroot_and_env /usr/sbin/pkg unlock vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
-    $chroot_and_env /usr/sbin/pkg upgrade -f || finalize 1 "Failed to upgrade packages"
-    $chroot_and_env /usr/sbin/pkg lock vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
+    $chroot_and_env /usr/local/sbin/pkg-static unlock vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
+    $chroot_and_env /usr/local/sbin/pkg-static upgrade -f || finalize 1 "Failed to upgrade packages"
+    $chroot_and_env /usr/local/sbin/pkg-static lock vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
     info "[-] Done"
 
     /bin/echo "[+] Cleaning pkg cache..."
-    $chroot_and_env /usr/sbin/pkg clean -a
+    $chroot_and_env /usr/local/sbin/pkg-static clean -a
     /bin/echo "[-] Done"
 
     for jail in $JAILS_LIST; do
         info "[+] Upgrading $jail's packages"
-        $chroot_and_env /usr/sbin/pkg -c /zroot/$jail upgrade || finalize 1 "Failed to upgrade packages on jail $jail"
+        $chroot_and_env /usr/local/sbin/pkg-static -c /zroot/$jail upgrade || finalize 1 "Failed to upgrade packages on jail $jail"
         info "[-] Done"
 
         /bin/echo "[+] Cleaning $jail pkg cache..."
-        $chroot_and_env /usr/sbin/pkg -c /zroot/$jail clean -a
+        $chroot_and_env /usr/local/sbin/pkg-static -c /zroot/$jail clean -a
         /bin/echo "[-] Done"
     done
 }
@@ -197,7 +197,7 @@ create_and_mount_BE() {
 
     # Lock mongodb to prevent dataset corruption
     exec_mongo "db.fsyncLock()" > /dev/null
-    /sbin/bectl create -r $new_be || info "BE '$new_be' already exists."
+    /sbin/bectl create -r $new_be || info "BE '$new_be' already exists, using it."
     exec_mongo "db.fsyncUnlock()" > /dev/null
     # There is a bug where canmount=off is changed to noauto
     /sbin/zfs set canmount=off "$(get_root_zpool_name)/ROOT/$new_be/usr"
@@ -263,7 +263,7 @@ clean_and_restart() {
 }
 
 usage() {
-    /bin/echo "USAGE ${0} [-y]"
+    /bin/echo "USAGE ${0} [-Dry]"
     /bin/echo "OPTIONS:"
     /bin/echo "	-D	only download OS upgrades and packages in BE"
     /bin/echo "	-r	auto reboot after upgrade has complete"
@@ -367,7 +367,8 @@ finalize() {
 
     info "[$(date -u -Iseconds)] Upgrade script finished!"
 
-    if has_pending_BE && [ $auto_reboot -eq 1 ]; then
+    # has_pending_BE return 1 if there is a pending BE
+    if ! has_pending_BE && [ $auto_reboot -eq 1 ]; then
         /bin/echo "[+] Rebooting system"
         /sbin/shutdown -r now
     fi
@@ -382,7 +383,7 @@ if [ "$(uname -K)" -gt 1400000 ]; then
     exit 0
 fi
 
-while getopts "Dy" flag;
+while getopts "Dry" flag;
 do
     case "${flag}" in
         D) download_only=1;
