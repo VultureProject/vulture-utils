@@ -58,7 +58,7 @@ exec_mongo() {
         return 1
     fi
 
-    /usr/sbin/jexec mongodb connect -eval "${_command}"
+    /usr/sbin/jexec mongodb connect -- --eval "${_command}"
     return $?
 }
 
