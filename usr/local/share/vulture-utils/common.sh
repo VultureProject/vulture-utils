@@ -68,7 +68,7 @@ exec_mongo() {
 
 exec_redis() {
     _command="$1"
-    _password="$(exec_mongo "db.system_config.findOne().redis_password")"
+    _password="$(grep -F 'masterauth' /zroot/redis/usr/local/etc/redis/redis.conf | sed -n 's/masterauth "\(.*\)"/\1/p')"
 
     if ! /usr/sbin/jls | /usr/bin/grep -q redis; then
         return 1
