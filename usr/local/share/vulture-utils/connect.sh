@@ -34,12 +34,16 @@ jail="$1"
 shift
 _params="$*"
 
-if [ "$jail" = "mongodb" ]; then
-    exec_mongo "$_params"
-elif [ "$jail" = "redis" ]; then
-    exec_redis "$_params"
-else
-    echo "Error: '$jail' is not a valid jail."
-    echo "Available jails: $VALID_JAILS"
-    exit 1
-fi
+case "$jail" in
+    mongodb)
+        exec_mongo "$_params"
+        ;;
+    redis)
+        exec_redis "$_params"
+        ;;
+    *)
+        echo "Error: '$jail' is not a valid jail."
+        echo "Available jails: $VALID_JAILS"
+        exit 1
+        ;;
+esac
