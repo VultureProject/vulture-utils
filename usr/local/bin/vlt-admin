@@ -35,6 +35,7 @@ Available Commands:
 	upgrade-pkg	Upgrade the packages.
 	snapshot	Create and manage machine ZFS snapshots.
 	restore		Use Snapshots to rollback all or parts of the machine.
+	connect		Connect to mongodb and redis easily.
 
 Use "vlt-admin -v" for version information.
 Use "vlt-admin <command> -h" for more information about a command.
@@ -64,6 +65,12 @@ case "${CMD}" in
         ;;
     upgrade-os|upgrade-pkg)
         # Nothing to do specificaly for there commands (apart from launching them)
+        ;;
+    connect)
+        # Default to printing help if no argument is given
+        if [ $# -eq 0 ]; then
+            PARAMS='-h'
+        fi
         ;;
     *) # Print usage if sub-command is unknown
         error "unknown command ${CMD}"

@@ -58,7 +58,27 @@ exec_mongo() {
         return 1
     fi
 
-    /usr/sbin/jexec mongodb connect -- --eval "${_command}"
+    if [ -z "${_command}" ]; then
+        /usr/sbin/jexec mongodb connect
+    else
+        /usr/sbin/jexec mongodb connect -- --eval "${_command}"
+    fi
+    return $?
+}
+
+exec_redis() {
+    _command="$1"
+    _password="$(grep -F 'masterauth' /zroot/redis/usr/local/etc/redis/redis.conf | sed -n 's/masterauth "\(.*\)"/\1/p')"
+
+    if ! /usr/sbin/jls | /usr/bin/grep -q redis; then
+        return 1
+    fi
+
+    if [ -z "${_password}" ]; then
+        /usr/sbin/jexec redis /usr/local/bin/redis-cli ${_command}
+    else
+        REDISCLI_AUTH="$_password" /usr/sbin/jexec redis /usr/local/bin/redis-cli ${_command}
+    fi
     return $?
 }
 
