@@ -16,6 +16,7 @@ _need_maintenance_toggle=1
 _pkg_options=""
 _vultured_was_up=0
 _gui_was_up=0
+_portal_was_up=0
 _cron_was_up=0
 
 #############
@@ -160,13 +161,16 @@ finalize() {
         /usr/local/bin/sudo -u vlt-os /home/vlt-os/env/bin/python /home/vlt-os/vulture_os/manage.py toggle_maintenance --off 2>/dev/null || true
 
         if [ $_vultured_was_up -eq 1 ]; then
-            # Restart Vultured after upgrade
+            echo "[+] Restarting vultured..."
             /usr/sbin/service vultured start
         fi
         if [ $_gui_was_up -eq 1 ]; then
-            # Restart GUI if something went wrong during upgrade
-            /usr/sbin/jexec portal /usr/sbin/service gunicorn start
+            echo "[+] Restarting GUI services..."
             /usr/sbin/jexec apache /usr/sbin/service gunicorn start
+        fi
+        if [ $_portal_was_up -eq 1 ]; then
+            echo "[+] Restarting Portal services..."
+            /usr/sbin/jexec portal /usr/sbin/service gunicorn start
         fi
     fi
 
@@ -291,9 +295,22 @@ done
 # No parameter, or gui
 if [ -z "${targets}" ] || contains_word "${targets}" "gui" ; then
     echo "[+] Updating GUI..."
-    _gui_was_up=1
-    /usr/sbin/jexec apache /usr/sbin/service gunicorn stop
-    /usr/sbin/jexec portal /usr/sbin/service gunicorn stop
+    if /usr/sbin/jexec apache /usr/sbin/service gunicorn status > /dev/null; then
+        echo "[+] Stopping GUI services..."
+        _gui_was_up=1
+        /usr/sbin/jexec apache /usr/sbin/service gunicorn stop
+        echo "[-] Ok."
+    else
+        warn "GUI is currently stopped, the service won't be restarted!"
+    fi
+    if /usr/sbin/jexec portal /usr/sbin/service gunicorn status > /dev/null; then
+        echo "[+] Stopping Portal services..."
+        _portal_was_up=1
+        /usr/sbin/jexec portal /usr/sbin/service gunicorn stop
+        echo "[-] Ok."
+    else
+        warn "Portal is currently stopped, the service won't be restarted!"
+    fi
 
     echo "[+] Updating vulture-gui package..."
     # shellcheck disable=SC2086
@@ -317,12 +334,7 @@ if [ -z "${targets}" ] || contains_word "${targets}" "gui" ; then
     IGNORE_OSVERSION="yes" /usr/sbin/pkg -j portal upgrade ${_pkg_options} -y || finalize 1 "Failed to upgrade packages in the portal jail"
     echo "[-] Ok."
 
-    echo "[+] Restarting services..."
-    /usr/sbin/jexec portal /usr/sbin/service gunicorn start
-    /usr/sbin/jexec apache /usr/sbin/service gunicorn start
     /usr/sbin/jexec apache /usr/sbin/service nginx restart
-    _gui_was_up=0
-    echo "[-] Ok."
     echo "[-] GUI updated."
 fi
 
