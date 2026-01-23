@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - [CONNECT] New easy way to connect to redis and mongodb
+- [SNAPSHOT] Add an option to snapshot's command in order to delete a specific snapshot
 ### Changed
 - [COMMON] Use new mongodb `connect` command to interact with all versions of DB
 - [UPGRADE-PKG] Restart GUI/Portal services only at the end of an upgrade
