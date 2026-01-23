@@ -10,6 +10,8 @@ snap_name="${SNAPSHOT_PREFIX}SNAP_$(date -u +%Y%m%d_%H%M%S)"
 list_snaps=0
 snapshot_system=0
 keep_previous_snap=-1
+delete_snapshot_mode=0
+delete_snapshot_name=""
 _mongo_locked=0
 _snapshot_datasets_list=""
 
@@ -21,6 +23,7 @@ usage() {
     echo "This command triggers snapshots on all or specific datasets, those snapshot points are then available for restorations"
     echo ""
     echo "OPTIONS:"
+    echo "	-h	Show this help banner"
     echo "	-A	Snapshot all underlying datasets"
     echo "	-S	Snapshot the system dataset(s)"
     echo "	-J	Snapshot the jail(s) dataset(s)"
@@ -29,6 +32,7 @@ usage() {
     echo "	-T	Snapshot the tmp/var dataset(s)"
     echo "	-l	Only list datasets"
     echo "	-k <num>	Keep <num> snapshots for the targeted datasets"
+    echo "	-d <name>	Delete snapshot <name> from targeted datasets (use with -A, -S, -J, -H, -D, -T)"
     exit 1
 }
 
@@ -38,7 +42,7 @@ if [ "$(/usr/bin/id -u)" != "0" ]; then
     exit 1
 fi
 
-while getopts 'hASJDHTlk:' opt; do
+while getopts 'hASJDHTlk:d:' opt; do
     case "${opt}" in
         A)  _snapshot_datasets_list="SYSTEM JAIL DB HOMES TMPVAR";
             snapshot_system=1;
@@ -57,6 +61,9 @@ while getopts 'hASJDHTlk:' opt; do
         l)  list_snaps=1;
             ;;
         k)  keep_previous_snap=${OPTARG};
+            ;;
+        d)  delete_snapshot_mode=1;
+            delete_snapshot_name="${OPTARG}";
             ;;
         h|*)  usage;
             ;;
@@ -92,6 +99,17 @@ finalize_early() {
     finalize 1 "Stopped"
 }
 
+if [ "${delete_snapshot_mode}" -gt 0 ]; then
+    if [ -z "${delete_snapshot_name}" ]; then
+        error "[!] Snapshot name required with -d option"
+        usage
+    fi
+    if [ "${snapshot_system}" -eq 0 ] && [ -z "${_snapshot_datasets_list}" ]; then
+        error "[!] Delete mode requires at least one dataset selector (-A, -S, -J, -H, -D, and/or -T)"
+        usage
+    fi
+fi
+
 if [ "${list_snaps}" -gt 0 ]; then
     _be_list="$(get_vlt_BEs | cut -f 1)"
     printf "SYSTEM:\t"
@@ -99,6 +117,11 @@ if [ "${list_snaps}" -gt 0 ]; then
         printf "%s\t" "$_be"
     done
     printf "\n"
+elif [ "${delete_snapshot_mode}" -gt 0 ] && [ "$snapshot_system" -gt 0 ]; then
+    echo "Deleting snapshot '${delete_snapshot_name}' from SYSTEM datasets"
+    if ! delete_BE "${delete_snapshot_name}"; then
+        finalize 1 "Failed to delete SYSTEM snapshot '${delete_snapshot_name}'"
+    fi
 elif [ "$snapshot_system" -gt 0 ]; then
     echo "making new snapshot for SYSTEM datasets"
     /sbin/bectl create "$snap_name"
@@ -119,7 +142,15 @@ for _type in ${AVAILABLE_DATASET_TYPES}; do
             printf "%s\t" "$_snap"
         done
         printf "\n"
-    # snapshotting datasets
+    # Delete snapshots
+    elif [ "${delete_snapshot_mode}" -gt 0 ]; then
+        # Ignore datasets not explicitely selected
+        if ! contains_word "${_snapshot_datasets_list}" "${_type}"; then
+            continue
+        fi
+        echo "Deleting snapshot '${delete_snapshot_name}' from ${_type} datasets"
+        delete_snapshot_from_datasets "$_type_datasets" "$delete_snapshot_name"
+    # Snapshotting datasets (normal mode)
     else
         # Ignore datasets not explicitely selected
         if ! contains_word "${_snapshot_datasets_list}" "${_type}"; then

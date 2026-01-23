@@ -240,6 +240,68 @@ clean_old_BEs() {
     done
 }
 
+# Delete a specific boot environment
+delete_BE() {
+    _be_name="$1"
+
+    if [ -z "${_be_name}" ]; then
+        error "[!] No Boot Environment name provided"
+        return 1
+    fi
+
+    # Check if BE exists in the list of vulture BEs
+    _existing_bes="$(get_vlt_BEs | cut -f 1)"
+    if ! contains_word "${_existing_bes}" "${_be_name}"; then
+        error "[!] Boot Environment '${_be_name}' not found"
+        return 1
+    fi
+
+    # Check if BE is currently active (status contains 'N')
+    _be_status="$(get_BEs | grep "^${_be_name}	" | cut -f 2)"
+    if printf "%s" "${_be_status}" | grep -q "N"; then
+        error "[!] Cannot delete active Boot Environment '${_be_name}'"
+        return 1
+    fi
+
+    echo "Destroying Boot Environment: '${_be_name}'"
+    /sbin/bectl destroy -o "${_be_name}"
+    return $?
+}
+
+# Delete a specific snapshot from datasets
+delete_snapshot_from_datasets() {
+    _datasets="$1" # space-separated list of datasets
+    _snap_to_delete="$2" # snapshot name to delete
+    _zpool="$(get_root_zpool_name)"
+    _deleted_count=0
+
+    if [ -z "${_datasets}" ] || [ -z "${_snap_to_delete}" ]; then
+        error "[!] Missing arguments for snapshot deletion"
+        return 1
+    fi
+
+    for _dataset in ${_datasets}; do
+        if zfs_dataset_exists "${_dataset}"; then
+            _existing_snaps="$(list_snapshots "${_dataset}")"
+            if contains_word "${_existing_snaps}" "${_snap_to_delete}"; then
+                echo "Deleting snapshot '${_zpool}/${_dataset}@${_snap_to_delete}'"
+                if /sbin/zfs destroy "${_zpool}/${_dataset}@${_snap_to_delete}"; then
+                    _deleted_count=$((_deleted_count + 1))
+                else
+                    error "[!] Failed to delete snapshot '${_zpool}/${_dataset}@${_snap_to_delete}'"
+                fi
+            fi
+        fi
+    done
+
+    if [ "${_deleted_count}" -eq 0 ]; then
+        warn "[!] No snapshot '${_snap_to_delete}' found in specified datasets"
+        return 1
+    fi
+
+    return 0
+}
+
 
 ############################
 ## Snapshotting functions ##
