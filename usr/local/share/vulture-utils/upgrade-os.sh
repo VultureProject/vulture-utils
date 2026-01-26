@@ -92,8 +92,9 @@ update_system() {
         fi
         if [ -n "$system_version" ]; then
             # Add -U as non-last update versions cannot be verified
+            # Add -i to disable version check
             echo "[!] Custom version of system update selected, this version will be installed without signature verification!"
-            _options="${_options} -v $system_version -U"
+            _options="${_options} -v $system_version -U -i"
         fi
         if [ -z "$_jail" ] && [ $snapshot_system -gt 0 ]; then
             _options="${_options} -b ${_snap_name}"
