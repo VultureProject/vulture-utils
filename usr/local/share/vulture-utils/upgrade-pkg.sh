@@ -54,6 +54,13 @@ initialize() {
             /usr/sbin/service vultured stop
         fi
 
+        if /usr/sbin/jexec apache /usr/sbin/service gunicorn status > /dev/null; then
+            echo "[+] Stopping GUI services..."
+            _gui_was_up=1
+            /usr/sbin/jexec apache /usr/sbin/service gunicorn stop
+            echo "[-] Ok."
+        fi
+
         # Disable secadm rules if on an HardenedBSD system
         if [ -f /usr/sbin/hbsd-update ] ; then
             echo "[+] Disabling root secadm rules"
@@ -167,6 +174,7 @@ finalize() {
         if [ $_gui_was_up -eq 1 ]; then
             echo "[+] Restarting GUI services..."
             /usr/sbin/jexec apache /usr/sbin/service gunicorn start
+            echo "[-] Ok."
         fi
         if [ $_portal_was_up -eq 1 ]; then
             echo "[+] Restarting Portal services..."
