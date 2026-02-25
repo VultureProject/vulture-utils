@@ -54,6 +54,13 @@ initialize() {
             /usr/sbin/service vultured stop
         fi
 
+        if /usr/sbin/jexec apache /usr/sbin/service gunicorn status > /dev/null; then
+            echo "[+] Stopping GUI services..."
+            _gui_was_up=1
+            /usr/sbin/jexec apache /usr/sbin/service gunicorn stop
+            echo "[-] Ok."
+        fi
+
         # Disable secadm rules if on an HardenedBSD system
         if [ -f /usr/sbin/hbsd-update ] ; then
             echo "[+] Disabling root secadm rules"
@@ -158,20 +165,23 @@ finalize() {
             echo "[-] Cron restarted"
         fi
 
-        /usr/local/bin/sudo -u vlt-os /home/vlt-os/env/bin/python /home/vlt-os/vulture_os/manage.py toggle_maintenance --off 2>/dev/null || true
-
         if [ $_vultured_was_up -eq 1 ]; then
             echo "[+] Restarting vultured..."
             /usr/sbin/service vultured start
+            echo "[-] Vultured restarted successfully"
         fi
         if [ $_gui_was_up -eq 1 ]; then
             echo "[+] Restarting GUI services..."
             /usr/sbin/jexec apache /usr/sbin/service gunicorn start
+            echo "[-] GUI restarted successfully"
         fi
         if [ $_portal_was_up -eq 1 ]; then
             echo "[+] Restarting Portal services..."
             /usr/sbin/jexec portal /usr/sbin/service gunicorn start
+            echo "[-] Portal restarted successfully"
         fi
+
+        /usr/local/bin/sudo -u vlt-os /home/vlt-os/env/bin/python /home/vlt-os/vulture_os/manage.py toggle_maintenance --off 2>/dev/null || true
     fi
 
     echo "[$(date -Iseconds)] Upgrade finished!"
@@ -310,9 +320,9 @@ if [ -z "${targets}" ] || contains_word "${targets}" "gui" ; then
         echo "[+] Stopping GUI services..."
         _gui_was_up=1
         /usr/sbin/jexec apache /usr/sbin/service gunicorn stop
-        echo "[-] Ok."
+        echo "[-] GUI has been stopped"
     else
-        warn "GUI is currently stopped, the service won't be restarted!"
+        echo "[*] GUI is already stopped"
     fi
     if /usr/sbin/jexec portal /usr/sbin/service gunicorn status > /dev/null; then
         echo "[+] Stopping Portal services..."
@@ -320,7 +330,7 @@ if [ -z "${targets}" ] || contains_word "${targets}" "gui" ; then
         /usr/sbin/jexec portal /usr/sbin/service gunicorn stop
         echo "[-] Ok."
     else
-        warn "Portal is currently stopped, the service won't be restarted!"
+        echo "[*] Portal is already stopped"
     fi
 
     echo "[+] Updating vulture-gui package..."
