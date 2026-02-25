@@ -11,6 +11,7 @@ TIME_START_SAFE="$(date -u +%Y%m%d_%H%M%S)"
 temp_dir="/tmp/vulture_update"
 resolve_strategy="mf"
 system_version=""
+disable_version_check=0
 keep_temp_dir=0
 download_only=0
 use_dnssec=0
@@ -34,6 +35,7 @@ usage() {
     echo "	-D	only download OS upgrades in temporary dir (implies -T)"
     echo "	-T	keep temporary directory"
     echo "	-V	set a custom system OS version (as specified by 'hbsd-update -v')"
+    echo "	-i	don't check current local version before upgrading"
     echo "	-c	clean tempdir at the end of the script (incompatible with -T and -D)"
     echo "	-d	use dnssec while downloading OS upgrades (disabled by default)"
     echo "	-b	Use a Boot Environment to install updates, and activate it on success (default)"
@@ -64,6 +66,10 @@ download_system_update() {
             echo "[!] Custom version of system update selected, this version will be installed without signature verification!"
             _options="${_options} -v $system_version -U"
         fi
+        if [ $disable_version_check -gt 0 ]; then
+            echo "[!] Disabling local version verification"
+            _options="${_options} -i"
+        fi
         if [ ! -f "${temp_dir}/update.tar" ]; then
             # Store (-t) and keep (-T) downloads to ${temp_dir} for later use
             # Do not install update yet (-f)
@@ -93,8 +99,12 @@ update_system() {
         if [ -n "$system_version" ]; then
             # Add -U as non-last update versions cannot be verified
             # Add -i to disable version check
-            echo "[!] Custom version of system update selected, this version will be installed without signature verification!"
-            _options="${_options} -v $system_version -U -i"
+            echo "[!] Custom version of system update selected: ${system_version}"
+            _options="${_options} -v $system_version -U"
+        fi
+        if [ $disable_version_check -gt 0 ]; then
+            echo "[!] Disabling local version verification"
+            _options="${_options} -i"
         fi
         if [ -z "$_jail" ] && [ $snapshot_system -gt 0 ]; then
             _options="${_options} -b ${_snap_name}"
@@ -184,7 +194,7 @@ finalize_early() {
 ####################
 # parse parameters #
 ####################
-while getopts 'hDTV:cdbBk:t:r:' opt; do
+while getopts 'hDTV:cdbBik:t:r:' opt; do
     case "${opt}" in
         D)  download_only=1;
             keep_temp_dir=1;
@@ -194,6 +204,9 @@ while getopts 'hDTV:cdbBk:t:r:' opt; do
         T)  keep_temp_dir=1;
             ;;
         V)  system_version="${OPTARG}";
+            disable_version_check=1;
+            ;;
+        i)  disable_version_check=1;
             ;;
         c)  clean_cache=1;
             ;;
