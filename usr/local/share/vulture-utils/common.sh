@@ -53,15 +53,22 @@ error_and_blink() {
 ######################
 exec_mongo() {
     _command="$1"
+    _exec=""
 
     if ! /usr/sbin/jls | /usr/bin/grep -q mongodb; then
         return 1
     fi
 
-    if [ -z "${_command}" ]; then
-        /usr/sbin/jexec mongodb connect
+    if /usr/sbin/jexec mongodb /usr/bin/command -v connect >/dev/null; then
+        _exec="/usr/sbin/jexec mongodb connect -- "
     else
-        /usr/sbin/jexec mongodb connect -- --eval "${_command}"
+        _exec="/usr/sbin/jexec mongodb mongo --ssl --sslCAFile /var/db/pki/ca.pem --sslPEMKeyFile /var/db/pki/node.pem $(hostname):9091"
+    fi
+
+    if [ -z "${_command}" ]; then
+        ${_exec}
+    else
+        ${_exec} --eval "${_command}"
     fi
     return $?
 }
