@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [COMMON] Use new mongodb `connect` command to interact with all versions of DB
 - [UPGRADE-PKG] Restart GUI/Portal services only at the end of an upgrade
 ### Fixed
-- [UPGRADE-PKG] Only restart jail service(s) when corresponding package is upgraded
+- [UPGRADE-PKG] Stop GUI services for the entire duration of the upgrade
 - [UPGRADE-OS] Do not check version when specifying a version to install
 
 
