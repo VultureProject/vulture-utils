@@ -168,17 +168,17 @@ finalize() {
         if [ $_vultured_was_up -eq 1 ]; then
             echo "[+] Restarting vultured..."
             /usr/sbin/service vultured start
-            echo "[*] Vultured restarted successfully"
+            echo "[-] Vultured restarted successfully"
         fi
         if [ $_gui_was_up -eq 1 ]; then
             echo "[+] Restarting GUI services..."
             /usr/sbin/jexec apache /usr/sbin/service gunicorn start
-            echo "[*] GUI restarted successfully"
+            echo "[-] GUI restarted successfully"
         fi
         if [ $_portal_was_up -eq 1 ]; then
             echo "[+] Restarting Portal services..."
             /usr/sbin/jexec portal /usr/sbin/service gunicorn start
-            echo "[*] Portal restarted successfully"
+            echo "[-] Portal restarted successfully"
         fi
 
         /usr/local/bin/sudo -u vlt-os /home/vlt-os/env/bin/python /home/vlt-os/vulture_os/manage.py toggle_maintenance --off 2>/dev/null || true
@@ -320,7 +320,7 @@ if [ -z "${targets}" ] || contains_word "${targets}" "gui" ; then
         echo "[+] Stopping GUI services..."
         _gui_was_up=1
         /usr/sbin/jexec apache /usr/sbin/service gunicorn stop
-        echo "[*] GUI has been stopped"
+        echo "[-] GUI has been stopped"
     else
         echo "[*] GUI is already stopped"
     fi
@@ -330,7 +330,7 @@ if [ -z "${targets}" ] || contains_word "${targets}" "gui" ; then
         /usr/sbin/jexec portal /usr/sbin/service gunicorn stop
         echo "[-] Ok."
     else
-        warn "Portal is already stopped"
+        echo "[*] Portal is already stopped"
     fi
 
     echo "[+] Updating vulture-gui package..."
