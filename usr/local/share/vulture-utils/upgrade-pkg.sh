@@ -249,6 +249,12 @@ fi
 
 # If no argument or jail asked
 for jail in "haproxy" "redis" "mongodb" "rsyslog" ; do
+    _rsyslog_need_restart=0
+    _filebeat_need_restart=0
+    _mongodb_need_restart=0
+    _redis_need_restart=0
+    _haproxy_need_restart=0
+
     if [ -z "${targets}" ] || contains_word "$targets" "$jail" ; then
 
         /bin/echo "[+] Updating jail $jail packages..."
@@ -256,19 +262,19 @@ for jail in "haproxy" "redis" "mongodb" "rsyslog" ; do
 
         case "$jail" in
             rsyslog)
-                rsyslog_need_restart="$(/usr/sbin/pkg upgrade -n vulture-rsyslog 2>&1 >/dev/null; echo $?)"
-                [ "$rsyslog_need_restart" -eq 1 ] || rsyslog_need_restart="$(/usr/sbin/pkg -j rsyslog upgrade -ng "*rsyslog*" 2>&1 >/dev/null; echo $?)"
-                filebeat_need_restart="$(/usr/sbin/pkg -j rsyslog upgrade -ng "*beat*" 2>&1 >/dev/null; echo $?)"
+                 if /usr/sbin/pkg version -qRl'<' | grep -q vulture-rsyslog; then _rsyslog_need_restart=1; fi
+                 if /usr/sbin/pkg -j rsyslog version -qRl'<' | grep -q rsyslog; then _rsyslog_need_restart=1; fi
+                 if /usr/sbin/pkg -j rsyslog version -qRl'<' | grep -q beat; then _filebeat_need_restart=1; fi
                 ;;
             mongodb)
-                mongodb_need_restart="$(/usr/sbin/pkg -j mongodb upgrade -ng "mongodb*" 2>&1 >/dev/null; echo $?)"
+                 if /usr/sbin/pkg -j mongodb version -qRl'<' | grep -q mongodb; then _mongodb_need_restart=1; fi
                 ;;
             redis)
-                redis_need_restart="$(/usr/sbin/pkg -j redis upgrade -ng "redis*" 2>&1 >/dev/null; echo $?)"
+                 if /usr/sbin/pkg -j redis version -qRl'<' | grep -q redis; then _redis_need_restart=1; fi
                 ;;
             haproxy)
-                haproxy_need_restart="$(/usr/sbin/pkg upgrade -n vulture-haproxy 2>&1 >/dev/null; echo $?)"
-                [ "$haproxy_need_restart" -eq 1 ] || haproxy_need_restart="$(/usr/sbin/pkg -j haproxy upgrade -ng "*haproxy*" 2>&1 >/dev/null; echo $?)"
+                 if /usr/sbin/pkg version -qRl'<' | grep -q vulture-haproxy; then _haproxy_need_restart=1; fi
+                 if /usr/sbin/pkg -j haproxy version -qRl'<' | grep -q haproxy; then _haproxy_need_restart=1; fi
                 ;;
         esac
 
@@ -283,21 +289,21 @@ for jail in "haproxy" "redis" "mongodb" "rsyslog" ; do
         echo "[-] Ok."
 
         echo "[+] Restarting services..."
-        if [ "$rsyslog_need_restart" -eq 1 ]; then
+        if [ "$_rsyslog_need_restart" -eq 1 ]; then
             /usr/sbin/jexec rsyslog /usr/sbin/service rsyslogd restart
         fi
-        if [ "$filebeat_need_restart" -eq 1 ]; then
+        if [ "$_filebeat_need_restart" -eq 1 ]; then
             /usr/sbin/jexec rsyslog /usr/sbin/service filebeat restart
         fi
-        if [ "$mongodb_need_restart" -eq 1 ]; then
+        if [ "$_mongodb_need_restart" -eq 1 ]; then
             /usr/sbin/jexec mongodb /usr/sbin/service mongod restart
         fi
-        if [ "$redis_need_restart" -eq 1 ]; then
+        if [ "$_redis_need_restart" -eq 1 ]; then
             /usr/sbin/jexec redis /usr/sbin/service sentinel stop
             /usr/sbin/jexec redis /usr/sbin/service redis restart
             /usr/sbin/jexec redis /usr/sbin/service sentinel start
         fi
-        if [ "$haproxy_need_restart" -eq 1 ]; then
+        if [ "$_haproxy_need_restart" -eq 1 ]; then
             if /usr/sbin/jexec haproxy /usr/sbin/service haproxy status > /dev/null ; then
                 # Reload gracefully
                 /bin/echo "[*] reloading haproxy service..."
