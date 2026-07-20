@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
-- [UPGRADE-OS] Upgrade script to update to HBSD14
+- [UPGRADE-OS] Upgrade script to update to HBSD14/15
 ### Fixed
 - [UPGRADE-PKG] Unlock vulture's packages also with download only option
 
