@@ -125,7 +125,8 @@ zfs_dataset_exists() {
         return 1
     fi
 
-    if /sbin/zfs list -oname | grep -q "^${_zpool}/${_dataset}\$"; then
+    # Migrated datasets are tied to current BE
+    if /sbin/zfs list -H -oname | grep -q "^${_zpool}/${_dataset}\$\|^${_zpool}/ROOT/$(get_current_BE)/${_dataset}\$"; then
         return 0
     else
         return 1
@@ -292,7 +293,8 @@ delete_snapshot_from_datasets() {
             _existing_snaps="$(list_snapshots "${_dataset}")"
             if contains_word "${_existing_snaps}" "${_snap_to_delete}"; then
                 echo "Deleting snapshot '${_zpool}/${_dataset}@${_snap_to_delete}'"
-                if /sbin/zfs destroy "${_zpool}/${_dataset}@${_snap_to_delete}"; then
+                if /sbin/zfs destroy "${_zpool}/${_dataset}@${_snap_to_delete}" || \
+                    /sbin/zfs destroy "${_zpool}/ROOT/$(get_current_BE)/${_dataset}@${_snap_to_delete}"; then
                     _deleted_count=$((_deleted_count + 1))
                 else
                     error "[!] Failed to delete snapshot '${_zpool}/${_dataset}@${_snap_to_delete}'"
@@ -324,7 +326,8 @@ snapshot_datasets() {
 
     for dataset in ${_datasets}; do
         if zfs_dataset_exists "${dataset}"; then
-            /sbin/zfs snap "${_zpool}/${dataset}@${_snapshot_name}"
+            /sbin/zfs snap "${_zpool}/${dataset}@${_snapshot_name}" || \
+                /sbin/zfs snap "${_zpool}/ROOT/$(get_current_BE)/${dataset}@${_snapshot_name}"
         fi
     done
 }
@@ -339,7 +342,8 @@ list_snapshots() {
 
     if zfs_dataset_exists "${_dataset}"; then
         # List snapshot names only, ordering by descending order (most recent first)
-        /sbin/zfs list -H -tsnap -oname -Screation "${_zpool}/${_dataset}" |\
+        (/sbin/zfs list -H -tsnap -oname -Screation "${_zpool}/${_dataset}" 2>/dev/null ||\
+            /sbin/zfs list -H -tsnap -oname -Screation "${_zpool}/ROOT/$(get_current_BE)/${_dataset}") |\
             # Get snapshot name part (remove dataset part)
             /usr/bin/cut -d '@' -f 2 |\
             # filter out snapshot not created by scripts
@@ -372,7 +376,8 @@ clean_previous_snapshots() {
             _snaps_to_remove="$(sublist "${_ordered_snapshots}" "$((_number_to_keep+1))")"
             for _snap in $_snaps_to_remove; do
                 /bin/echo "removing snapshot '${_zpool}/${_dataset}@${_snap}'"
-                /sbin/zfs destroy "${_zpool}/${_dataset}@${_snap}"
+                /sbin/zfs destroy "${_zpool}/${_dataset}@${_snap}" ||\
+                    /sbin/zfs destroy "${_zpool}/ROOT/$(get_current_BE)/${_dataset}@${_snap}"
             done
         fi
     done
@@ -394,7 +399,8 @@ tag_snapshots_for_rollback() {
     for _dataset in ${_datasets}; do
         if zfs_dataset_exists "${_dataset}"; then
             echo "will rollback to ${_zpool}/${_dataset}@${_snapshot}"
-            /sbin/zfs set snapshot:restore=YES "${_zpool}/${_dataset}@${_snapshot}"
+            /sbin/zfs set snapshot:restore=YES "${_zpool}/${_dataset}@${_snapshot}" ||\
+                /sbin/zfs set snapshot:restore=YES "${_zpool}/ROOT/$(get_current_BE)/${_dataset}@${_snapshot}"
         fi
     done
 }
@@ -410,7 +416,8 @@ list_pending_rollbacks() {
     fi
 
     if zfs_dataset_exists "${_dataset}"; then
-        zfs list -tsnap -o name,snapshot:restore "${_zpool}/${_dataset}" 2>/dev/null |\
+        (/sbin/zfs list -H -tsnap -o name,snapshot:restore "${_zpool}/${_dataset}" 2>/dev/null ||\
+            /sbin/zfs list -H -tsnap -o name,snapshot:restore "${_zpool}/ROOT/$(get_current_BE)/${_dataset}" 2>/dev/null) |\
         while read -r _name _status; do
             if [ "${_status}" = "YES" ]; then
                 _snap_name=$(echo "${_name}" | cut -d @ -f 2)
@@ -434,7 +441,8 @@ clean_rollback_state_on_datasets() {
             _snapshot_list="$(list_pending_rollbacks "${_dataset}")"
             for _snapshot in ${_snapshot_list}; do
                 echo "Resetting rollback state for ${_dataset}"
-                /sbin/zfs inherit snapshot:restore "${_zpool}/${_dataset}@${_snapshot}"
+                /sbin/zfs inherit snapshot:restore "${_zpool}/${_dataset}@${_snapshot}" ||\
+                    /sbin/zfs inherit snapshot:restore "${_zpool}/ROOT/$(get_current_BE)/${_dataset}@${_snapshot}"
             done
         fi
     done
