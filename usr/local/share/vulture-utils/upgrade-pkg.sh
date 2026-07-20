@@ -82,11 +82,6 @@ initialize() {
             /usr/sbin/jexec $jail /sbin/sysctl hardening.harden_rtld=0 > /dev/null
         done
 
-        # Unlock Vulture packages
-        echo "[+] Unlocking Vulture packages..."
-        /usr/sbin/pkg unlock -y vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
-        echo "[-] Done."
-
         if /usr/sbin/service cron status > /dev/null; then
             _cron_was_up=1
             process_match="manage.py crontab run "
@@ -107,6 +102,11 @@ initialize() {
         fi
     fi
 
+    # Unlock Vulture packages
+    echo "[+] Unlocking Vulture packages..."
+    /usr/sbin/pkg unlock -y vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
+    echo "[-] Done."
+
     if [ -f /etc/rc.conf.proxy ]; then
         . /etc/rc.conf.proxy
         export http_proxy="${http_proxy}"
@@ -114,7 +114,6 @@ initialize() {
         export ftp_proxy="${ftp_proxy}"
     fi
 }
-
 
 finalize() {
     # set default in case err_code is not specified
@@ -150,11 +149,6 @@ finalize() {
             eval "/usr/sbin/jexec $jail /sbin/sysctl hardening.harden_rtld=\$_was_rtld_$jail" > /dev/null
         done
 
-        # Lock Vulture packages
-        echo "[+] Lock Vulture packages..."
-        /usr/sbin/pkg lock -y vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
-        echo "[-] Done."
-
         # Be sure to restart dnsmasq: No side-effect and it deals with dnsmasq configuration changes
         /usr/sbin/service dnsmasq restart
 
@@ -183,6 +177,11 @@ finalize() {
 
         /usr/local/bin/sudo -u vlt-os /home/vlt-os/env/bin/python /home/vlt-os/vulture_os/manage.py toggle_maintenance --off 2>/dev/null || true
     fi
+
+    # Lock Vulture packages
+    echo "[+] Lock Vulture packages..."
+    /usr/sbin/pkg lock -y vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
+    echo "[-] Done."
 
     echo "[$(date -Iseconds)] Upgrade finished!"
     exit "$err_code"
