@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
+### Added
+- [UPGRADE-MAJOR] Upgrade script to update system OS to next major version
 ### Fixed
 - [UPGRADE-PKG] Unlock vulture's packages also with download only option
 
