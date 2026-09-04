@@ -9,7 +9,8 @@ COLOR_OFF='\033[0m'
 COLOR_RED='\033[0;31m'
 
 temp_dir="/var/tmp/update"
-new_be="${SNAPSHOT_PREFIX}HBSD15-$(date -Idate)"
+major_version=15
+new_be="${SNAPSHOT_PREFIX}HBSD${major_version}"
 download_only=0
 auto_reboot=0
 _run_ok=0
@@ -18,7 +19,7 @@ download_system_update() {
     _mnt_temp_dir="$1"
 
     if [ ! -f ${temp_dir}/update.tar ]; then
-        /usr/bin/sed -i ".bak" -E "s/(13|14)-stable/15-stable/g" "$_mnt_temp_dir/etc/hbsd-update.conf"
+        /usr/bin/sed -i ".bak" -E "s/[0-9]+-stable/${major_version}-stable/g" "$_mnt_temp_dir/etc/hbsd-update.conf"
         /home/vlt-adm/system/register_vulture_repos.sh $_mnt_temp_dir
 
         info "[+] Downloading system update"
@@ -39,18 +40,18 @@ update_system() {
         if [ -d $_mnt_temp_dir/.jail_system ]; then
             _path="$_mnt_temp_dir/.jail_system"
         else
-            _path="$_mnt_temp_dir/zroot/$jail"
+            _path="$_mnt_temp_dir/zroot/$_jail"
         fi
     else
         _path="$_mnt_temp_dir"
     fi
 
-    /usr/bin/sed -i ".bak" -E "s/(13|14)-stable/15-stable/g" "$_path/etc/hbsd-update.conf"
+    /usr/bin/sed -i ".bak" -E "s/[0-9]+-stable/${major_version}-stable/g" "$_path/etc/hbsd-update.conf"
     /home/vlt-adm/system/register_vulture_repos.sh $_path
 
     /bin/echo "[+] Updating base system..."
     # shellcheck disable=SC2086
-    /usr/bin/yes "mf" | /usr/sbin/hbsd-update -t "$temp_dir" -T -D -r $_path -c $_path/etc/hbsd-update.conf $_options || finalize 1 "System update failed"
+    /usr/bin/yes "mf" | /usr/sbin/hbsd-update -t "$temp_dir" -T -D -r $_path -c $_path/etc/hbsd-update.conf $_options || finalize 1 "System update failed."
     /bin/echo "[-] Done with update"
 }
 
@@ -58,32 +59,32 @@ download_packages() {
     _mnt_temp_dir="$1"
 
     pkg_env="/usr/bin/env IGNORE_OSVERSION=yes ASSUME_ALWAYS_YES=yes"
-    pkg_args="-c $_mnt_temp_dir -o ABI=FreeBSD:15:amd64"
+    pkg_args="-c $_mnt_temp_dir -o ABI=FreeBSD:${major_version}:amd64"
 
     /bin/echo "[+] Updating root pkg repository catalogue"
-    $pkg_env /usr/sbin/pkg $pkg_args update -f || finalize 1 "Could not update list of packages"
+    $pkg_env /usr/sbin/pkg $pkg_args update -f || finalize 1 "Could not update list of packages."
     /bin/echo "[-] Done"
 
     /bin/echo "[+] Clear pkg cache before fetching"
-    $pkg_env /usr/sbin/pkg $pkg_args clean -a || finalize 1 "Could not clear pkg cache"
+    $pkg_env /usr/sbin/pkg $pkg_args clean -a || finalize 1 "Could not clear pkg cache."
     /bin/echo "[-] Done"
 
     info "[+] Fetching host's packages"
     $pkg_env /usr/sbin/pkg $pkg_args unlock vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
-    $pkg_env /usr/sbin/pkg $pkg_args fetch -u || finalize 1 "Failed to download packages"
+    $pkg_env /usr/sbin/pkg $pkg_args fetch -u || finalize 1 "Failed to download packages."
     $pkg_env /usr/sbin/pkg $pkg_args lock vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
     info "[-] Done"
 
     for jail in $JAILS_LIST; do
         if [ -d $_mnt_temp_dir/.jail_system ]; then
-            /sbin/mount -t nullfs $_mnt_temp_dir/.jail_system $_mnt_temp_dir/zroot/$jail/.jail_system || finalize 1 "Unable to mount .jail_system"
+            /sbin/mount -t nullfs $_mnt_temp_dir/.jail_system $_mnt_temp_dir/zroot/$jail/.jail_system || finalize 1 "Unable to mount .jail_system."
         fi
 
-        pkg_args="-c $_mnt_temp_dir/zroot/$jail -o ABI=FreeBSD:15:amd64"
+        pkg_args="-c $_mnt_temp_dir/zroot/$jail -o ABI=FreeBSD:${major_version}:amd64"
 
-        $pkg_env /usr/sbin/pkg $pkg_args clean -a || finalize 1 "Could not clear pkg cache for jail $jail"    
+        $pkg_env /usr/sbin/pkg $pkg_args clean -a || finalize 1 "Could not clear pkg cache for jail $jail."    
         /bin/echo "[+] Fetching $jail's packages..."
-        $pkg_env /usr/sbin/pkg $pkg_args fetch -u || finalize 1 "Failed to download packages for jail $jail"
+        $pkg_env /usr/sbin/pkg $pkg_args fetch -u || finalize 1 "Failed to download packages for jail $jail."
         /bin/echo "[-] Done"
     
         /sbin/umount $_mnt_temp_dir/zroot/$jail/.jail_system 2>/dev/null
@@ -97,11 +98,11 @@ update_packages() {
     pkg_args="-c $_mnt_temp_dir"
 
     # Delete me
-    $pkg_env /usr/sbin/pkg $pkg_args bootstrap -f || finalize 1 "Could not bootstrap pkg"
+    $pkg_env /usr/sbin/pkg $pkg_args bootstrap -f || finalize 1 "Could not bootstrap pkg."
 
     info "[+] Upgrading host system packages"
     $pkg_env /usr/sbin/pkg $pkg_args unlock vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
-    $pkg_env /usr/sbin/pkg $pkg_args upgrade -f || finalize 1 "Failed to upgrade packages"
+    $pkg_env /usr/sbin/pkg $pkg_args upgrade -f || finalize 1 "Failed to upgrade packages."
     $pkg_env /usr/sbin/pkg $pkg_args lock vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
     info "[-] Done"
 
@@ -113,7 +114,7 @@ update_packages() {
         pkg_args="-c $_mnt_temp_dir/zroot/$jail"
 
         info "[+] Upgrading $jail's packages"
-        $pkg_env /usr/sbin/pkg $pkg_args upgrade || finalize 1 "Failed to upgrade packages on jail $jail"
+        $pkg_env /usr/sbin/pkg $pkg_args upgrade || finalize 1 "Failed to upgrade packages in jail $jail."
         info "[-] Done"
 
         /bin/echo "[+] Cleaning $jail pkg cache..."
@@ -182,7 +183,7 @@ create_and_mount_BE() {
 restart_and_continue() {
     /bin/echo "[+] Setting up startup script to continue upgrade..."
     # enable script to be run on startup
-    /bin/echo "@reboot root sleep 60 && /bin/sh $SCRIPT -y" > "/etc/cron.d/vulture_update" || finalize 1 "Failed to setup startup script"
+    /bin/echo "@reboot root sleep 60 && /bin/sh $SCRIPT -y" > "/etc/cron.d/vulture_update" || finalize 1 "Failed to setup startup script."
     # Add a temporary message to end of MOTD to warn about the ongoing upgrade
     reset_motd
     add_to_motd "\033[5m\033[38;5;196mUpgrade in progress, your machine will reboot shortly, please wait patiently!\033[0m"
@@ -198,8 +199,8 @@ restart_in_be_and_continue() {
     /bin/echo "[+] Setting up startup script to continue upgrade in BE..."
     # enable script to be run on startup
     tmp_be_mount="$(/usr/bin/mktemp -d)"
-    /sbin/bectl mount "$new_be" "$tmp_be_mount" || finalize 1 "Could not mount Boot Environment"
-    /bin/echo "@reboot root sleep 60 && /bin/sh $SCRIPT -y" > "${tmp_be_mount}/etc/cron.d/vulture_update" || finalize 1 "Failed to setup startup script"
+    /sbin/bectl mount "$new_be" "$tmp_be_mount" || finalize 1 "Could not mount Boot Environment."
+    /bin/echo "@reboot root sleep 60 && /bin/sh $SCRIPT -y" > "${tmp_be_mount}/etc/cron.d/vulture_update" || finalize 1 "Failed to setup startup script."
     # Add a temporary message to end of MOTD to warn about the ongoing upgrade
     /usr/bin/sed -i '' '$s/.*/[5m[38;5;196mUpgrade in progress, your machine will reboot shortly, please wait patiently![0m/' "${tmp_be_mount}/etc/motd.template"
     /usr/bin/sed -i '' 's+welcome=/etc/motd+welcome=/var/run/motd+' "${tmp_be_mount}/etc/login.conf"
@@ -237,13 +238,14 @@ usage() {
     /bin/echo "OPTIONS:"
     /bin/echo "	-D	only download OS upgrades and packages in BE"
     /bin/echo "	-r	auto reboot after upgrade has complete"
+    /bin/echo "	-V  select OS version between 14 and 15 (default: 15)"
     /bin/echo "	-y	start the upgrade whitout asking for user confirmation (implicit consent)"
     exit 1
 }
 
 check_preconditions() {
     if [ "$(/usr/bin/id -u)" != "0" ]; then
-        /bin/echo "This script must be run as root" 1>&2
+        /bin/echo "This script must be run as root." 1>&2
         exit 1
     fi
     # Show necessary packages to be updated
@@ -251,11 +253,11 @@ check_preconditions() {
         /usr/bin/printf "${COLOR_RED}"
         /usr/sbin/pkg version -qRl '<' | grep 'vulture-'
         /usr/bin/printf "${COLOR_OFF}"
-        finalize 1 "Some packages are not up to date, please run 'vlt-admin upgrade-pkg' before trying to migrate"
+        finalize 1 "Some packages are not up to date, please run 'vlt-admin upgrade-pkg' before trying to migrate."
     fi
     # Check remaining disk space larger than 8GB
     if [ "$(/sbin/zpool list -Hpo free)" -lt 8000000000 ]; then
-        finalize 1 "Free disk space is insufficient"
+        finalize 1 "Free disk space is insufficient."
     fi
 }
 
@@ -272,31 +274,18 @@ initialize() {
     fi
 
     # Create temporary directory if it does not exist
-    /bin/mkdir -p $temp_dir || /bin/echo "Temp directory exists, keeping"
+    /bin/mkdir -p $temp_dir || /bin/echo "Temp directory exists, keeping it."
 
     # Fix jails nameserver
     for jail in $JAILS_LIST; do
         case "$jail" in
-            mongodb)
-                /bin/echo "nameserver 127.0.0.2" > /zroot/${jail}/etc/resolv.conf
-                ;;
-            redis)
-                /bin/echo "nameserver 127.0.0.3" > /zroot/${jail}/etc/resolv.conf
-                ;;
-            rsyslog)
-                /bin/echo "nameserver 127.0.0.4" > /zroot/${jail}/etc/resolv.conf
-                ;;
-            haproxy)
-                /bin/echo "nameserver 127.0.0.5" > /zroot/${jail}/etc/resolv.conf
-                ;;
-            apache)
-                /bin/echo "nameserver 127.0.0.6" > /zroot/${jail}/etc/resolv.conf
-                ;;
-            portal)
-                /bin/echo "nameserver 127.0.0.7" > /zroot/${jail}/etc/resolv.conf
-                ;;
-            *)
-                ;;
+            mongodb) /bin/echo "nameserver 127.0.0.2" > /zroot/${jail}/etc/resolv.conf ;;
+            redis) /bin/echo "nameserver 127.0.0.3" > /zroot/${jail}/etc/resolv.conf ;;
+            rsyslog) /bin/echo "nameserver 127.0.0.4" > /zroot/${jail}/etc/resolv.conf ;;
+            haproxy) /bin/echo "nameserver 127.0.0.5" > /zroot/${jail}/etc/resolv.conf ;;
+            apache) /bin/echo "nameserver 127.0.0.6" > /zroot/${jail}/etc/resolv.conf ;;
+            portal) /bin/echo "nameserver 127.0.0.7" > /zroot/${jail}/etc/resolv.conf ;;
+            *) ;;
         esac
     done
 }
@@ -309,7 +298,7 @@ finalize() {
     if [ $download_only -eq 0 ]; then
         /bin/echo "[+] Cleaning temporary dir..."
         /bin/rm -rf "$temp_dir"
-        /bin/echo "[-] Done."
+        /bin/echo "[-] Done"
     fi
 
     if get_BEs | grep -q $new_be; then
@@ -325,7 +314,7 @@ finalize() {
     if [ -n "$err_message" ]; then
         if get_BEs | grep -q $new_be; then
             /bin/echo "[+] Cleaning BE..."
-            /sbin/bectl destroy -F $new_be || error "[!] Unable to destroy BE '$new_be'"
+            /sbin/bectl destroy -F $new_be || error "[!] Unable to destroy BE '$new_be'."
             /bin/echo "[-] Done"
         fi
 
@@ -344,18 +333,20 @@ finalize() {
 }
 
 
-if [ "$(uname -K)" -gt 1500000 ]; then
-    /bin/echo "Your system seems to already be on HBSD15, nothing to do!"
+if [ "$(uname -r | cut -d'.' -f1)" -gt "${major_version}" ]; then
+    /bin/echo "Your system seems to already be on HBSD${major_version}, nothing to do!"
     reset_motd
     exit 0
 fi
 
-while getopts "Dry" flag;
+while getopts "DrV:y" flag;
 do
     case "${flag}" in
         D) download_only=1;
         ;;
         r) auto_reboot=1;
+        ;;
+        V) major_version=${OPTARG};
         ;;
         y) _run_ok=1;
         ;;
@@ -383,8 +374,8 @@ fi
 
 # Automatically continue upgrade if a reboot occured
 if [ -f ${temp_dir}/upgrading ] && [ $_run_ok -eq 1 ]; then
-    log_file=/var/log/upgrade-to-15.log
-    /bin/echo "Output will be sent to $log_file"
+    log_file=/var/log/upgrade-major.log
+    /bin/echo "Output will be sent to $log_file."
 
     exec 3>&1 4>&2
     trap 'exec 2>&4 1>&3' 0 1 2 3
@@ -403,7 +394,7 @@ if [ $download_only -eq 0 ]; then
     # Fix pam.d
     if [ -d $mnt_temp_dir/.jail_system ] && [ ! -h "$mnt_temp_dir/zroot/apache/etc/pam.d" ]; then
         /bin/rm -vr $mnt_temp_dir/zroot/*/etc/pam.d || finalize 1 "Unable to fix pam.d, are jails datasets mounted?"
-        for jail in apache portal haproxy mongodb rsyslog redis; do
+        for jail in $JAILS_LIST; do
             /bin/ln -vs ../.jail_system/etc/pam.d $mnt_temp_dir/zroot/$jail/etc/pam.d
         done
     fi
@@ -432,16 +423,16 @@ if [ $download_only -eq 0 ]; then
 
     if [ -d $mnt_temp_dir/.jail_system ]; then
         for jail in $JAILS_LIST; do
-            /sbin/mount -t nullfs $mnt_temp_dir/.jail_system $mnt_temp_dir/zroot/$jail/.jail_system || finalize "Unable to mount .jail_system"
+            /sbin/mount -t nullfs $mnt_temp_dir/.jail_system $mnt_temp_dir/zroot/$jail/.jail_system || finalize "Unable to mount .jail_system."
         done
     fi
 
     update_packages $mnt_temp_dir
 
     reset_motd
-    /usr/bin/printf "\033[38;5;10mYour system is now on HardenedBSD 15, welcome back!\033[0m\n" >> $mnt_temp_dir/etc/motd.template
+    /usr/bin/printf "\033[38;5;10mYour system is now on HardenedBSD ${major_version}, welcome back!\033[0m\n" >> $mnt_temp_dir/etc/motd.template
 
-    /sbin/bectl activate -t $new_be || finalize 1 "Unable to activate BE, try to do it manually."
+    /sbin/bectl activate $new_be || finalize 1 "Unable to activate BE, try to do it manually."
 else
     /sbin/mount -t devfs devfs $mnt_temp_dir/dev
     download_packages $mnt_temp_dir

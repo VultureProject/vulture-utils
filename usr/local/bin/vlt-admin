@@ -33,9 +33,7 @@ Usage:
 Available Commands:
 	upgrade-os	Upgrade the system.
 	upgrade-pkg	Upgrade the packages.
-	upgrade-os-to-14	Migrate system to HardenedBSD 14.
-	upgrade-os-to-15	Migrate system to HardenedBSD 15.
-	upgrade-mongodb	Upgrade MongoDB version
+	upgrade-major	Migrate system to next major version.
 	snapshot	Create and manage machine ZFS snapshots.
 	restore		Use Snapshots to rollback all or parts of the machine.
 	connect		Connect to mongodb and redis easily.
@@ -66,12 +64,8 @@ case "${CMD}" in
             PARAMS='-h'
         fi
         ;;
-    upgrade-os|upgrade-os-to-14|upgrade-os-to-15|upgrade-pkg)
+    upgrade-os|upgrade-major|upgrade-pkg)
         # Nothing to do specificaly for there commands (apart from launching them)
-        ;;
-    upgrade-mongodb)
-        SCRIPTS_ROOT=/home/vlt-adm/system/
-        CMD=upgrade_mongodb
         ;;
     connect)
         # Default to printing help if no argument is given
