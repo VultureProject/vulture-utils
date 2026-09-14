@@ -1,9 +1,7 @@
 #!/usr/bin/env sh
-
+# shellcheck disable=SC1091
 
 . /usr/local/share/vulture-utils/common.sh
-
-SCRIPT=$(realpath "$0")
 
 COLOR_OFF='\033[0m'
 COLOR_RED='\033[0;31m'
@@ -20,10 +18,10 @@ download_system_update() {
 
     if [ ! -f ${temp_dir}/update.tar ]; then
         /usr/bin/sed -i ".bak" -E "s/[0-9]+-stable/${major_version}-stable/g" "$_mnt_temp_dir/etc/hbsd-update.conf"
-        /home/vlt-adm/system/register_vulture_repos.sh $_mnt_temp_dir
+        /home/vlt-adm/system/register_vulture_repos.sh "$_mnt_temp_dir"
 
         info "[+] Downloading system update"
-        /usr/sbin/hbsd-update -d -t "$temp_dir" -T -f -c $_mnt_temp_dir/etc/hbsd-update.conf || finalize 1  "System update download failed."
+        /usr/sbin/hbsd-update -d -t "$temp_dir" -T -f -c "$_mnt_temp_dir/etc/hbsd-update.conf" || finalize 1  "System update download failed."
         info "[-] Done"
     else
         info "[+] Upgrade file found, nothing to do."
@@ -37,7 +35,7 @@ update_system() {
 
     if [ -n "$_jail" ] ; then
         _options="-n"
-        if [ -d $_mnt_temp_dir/.jail_system ]; then
+        if [ -d "$_mnt_temp_dir/.jail_system" ]; then
             _path="$_mnt_temp_dir/.jail_system"
         else
             _path="$_mnt_temp_dir/zroot/$_jail"
@@ -47,7 +45,7 @@ update_system() {
     fi
 
     /usr/bin/sed -i ".bak" -E "s/[0-9]+-stable/${major_version}-stable/g" "$_path/etc/hbsd-update.conf"
-    /home/vlt-adm/system/register_vulture_repos.sh $_path
+    /home/vlt-adm/system/register_vulture_repos.sh "$_path"
 
     /bin/echo "[+] Updating base system..."
     # shellcheck disable=SC2086
@@ -62,32 +60,39 @@ download_packages() {
     pkg_args="-c $_mnt_temp_dir -o ABI=FreeBSD:${major_version}:amd64"
 
     /bin/echo "[+] Updating root pkg repository catalogue"
+    # shellcheck disable=SC2086
     $pkg_env /usr/sbin/pkg $pkg_args update -f || finalize 1 "Could not update list of packages."
     /bin/echo "[-] Done"
 
     /bin/echo "[+] Clear pkg cache before fetching"
+    # shellcheck disable=SC2086
     $pkg_env /usr/sbin/pkg $pkg_args clean -a || finalize 1 "Could not clear pkg cache."
     /bin/echo "[-] Done"
 
     info "[+] Fetching host's packages"
+    # shellcheck disable=SC2086
     $pkg_env /usr/sbin/pkg $pkg_args unlock vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
+    # shellcheck disable=SC2086
     $pkg_env /usr/sbin/pkg $pkg_args fetch -u || finalize 1 "Failed to download packages."
+    # shellcheck disable=SC2086
     $pkg_env /usr/sbin/pkg $pkg_args lock vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
     info "[-] Done"
 
     for jail in $JAILS_LIST; do
-        if [ -d $_mnt_temp_dir/.jail_system ]; then
-            /sbin/mount -t nullfs $_mnt_temp_dir/.jail_system $_mnt_temp_dir/zroot/$jail/.jail_system || finalize 1 "Unable to mount .jail_system."
+        if [ -d "$_mnt_temp_dir/.jail_system" ]; then
+            /sbin/mount -t nullfs "$_mnt_temp_dir/.jail_system" "$_mnt_temp_dir/zroot/$jail/.jail_system" || finalize 1 "Unable to mount .jail_system."
         fi
 
         pkg_args="-c $_mnt_temp_dir/zroot/$jail -o ABI=FreeBSD:${major_version}:amd64"
 
+        # shellcheck disable=SC2086
         $pkg_env /usr/sbin/pkg $pkg_args clean -a || finalize 1 "Could not clear pkg cache for jail $jail."    
         /bin/echo "[+] Fetching $jail's packages..."
+        # shellcheck disable=SC2086
         $pkg_env /usr/sbin/pkg $pkg_args fetch -u || finalize 1 "Failed to download packages for jail $jail."
         /bin/echo "[-] Done"
     
-        /sbin/umount $_mnt_temp_dir/zroot/$jail/.jail_system 2>/dev/null
+        /sbin/umount "$_mnt_temp_dir/zroot/$jail/.jail_system" 2>/dev/null
     done
 }
 
@@ -98,15 +103,20 @@ update_packages() {
     pkg_args="-c $_mnt_temp_dir"
 
     # Delete me
+    # shellcheck disable=SC2086
     $pkg_env /usr/sbin/pkg $pkg_args bootstrap -f || finalize 1 "Could not bootstrap pkg."
 
     info "[+] Upgrading host system packages"
+    # shellcheck disable=SC2086
     $pkg_env /usr/sbin/pkg $pkg_args unlock vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
+    # shellcheck disable=SC2086
     $pkg_env /usr/sbin/pkg $pkg_args upgrade -f || finalize 1 "Failed to upgrade packages."
+    # shellcheck disable=SC2086
     $pkg_env /usr/sbin/pkg $pkg_args lock vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
     info "[-] Done"
 
     /bin/echo "[+] Cleaning pkg cache..."
+    # shellcheck disable=SC2086
     $pkg_env /usr/sbin/pkg $pkg_args clean -a
     /bin/echo "[-] Done"
 
@@ -114,10 +124,12 @@ update_packages() {
         pkg_args="-c $_mnt_temp_dir/zroot/$jail"
 
         info "[+] Upgrading $jail's packages"
+        # shellcheck disable=SC2086
         $pkg_env /usr/sbin/pkg $pkg_args upgrade || finalize 1 "Failed to upgrade packages in jail $jail."
         info "[-] Done"
 
         /bin/echo "[+] Cleaning $jail pkg cache..."
+        # shellcheck disable=SC2086
         $pkg_env /usr/sbin/pkg $pkg_args clean -a
         /bin/echo "[-] Done"
     done
@@ -131,10 +143,10 @@ update_zfs_datasets() {
     /usr/sbin/sysrc zfs_enable=YES
     for jail in $JAILS_LIST; do
         # Check name of zfs jails datasets
-        if ! zfs_dataset_exists ROOT/$_current_be/$jail; then
+        if ! zfs_dataset_exists "ROOT/$_current_be/$jail"; then
             warn "Jail $jail's dataset is in legacy format, it will be renamed. No service interruption needed."
             if [ $_run_ok -ne 1 ]; then
-                /usr/bin/printf "Do you want to continue anyway? [yN]: "
+                /usr/bin/printf "Do you want to continue? [yN]: "
                 answer=""
                 read -r answer
                 case "${answer}" in
@@ -151,15 +163,15 @@ update_zfs_datasets() {
         fi
 
         for dataset in "" /usr /var /var/db /var/log; do
-            /sbin/zfs set canmount=noauto $_zpool/${jail}$dataset
+            /sbin/zfs set canmount=noauto "$_zpool/${jail}$dataset"
         done
-        /sbin/zfs rename -u $_zpool/$jail $_zpool/ROOT/$_current_be/$jail
+        /sbin/zfs rename -u "$_zpool/$jail" "$_zpool/ROOT/$_current_be/$jail"
     done
 
     # Rename home dataset
-    if ! zfs_dataset_exists ROOT/$_current_be/usr/home && ! zfs_dataset_exists ROOT/$_current_be/home; then
-        /sbin/zfs set canmount=noauto $_zpool/usr/home
-        /sbin/zfs rename -u $_zpool/usr $_zpool/ROOT/$_current_be/usr
+    if ! zfs_dataset_exists "ROOT/$_current_be/usr/home" && ! zfs_dataset_exists "ROOT/$_current_be/home"; then
+        /sbin/zfs set canmount=noauto "$_zpool/usr/home"
+        /sbin/zfs rename -u "$_zpool/usr" "$_zpool/ROOT/$_current_be/usr"
     fi
 }
 
@@ -168,69 +180,16 @@ create_and_mount_BE() {
 
     # Lock mongodb to prevent dataset corruption
     exec_mongo "db.fsyncLock()" > /dev/null
-    /sbin/bectl create -r $new_be || info "BE '$new_be' already exists, using it."
+    /sbin/bectl create -r "$new_be" || info "BE '$new_be' already exists, using it."
     exec_mongo "db.fsyncUnlock()" > /dev/null
     # There is a bug where canmount=off is changed to noauto
     /sbin/zfs set canmount=off "$(get_root_zpool_name)/ROOT/$new_be/usr"
 
-    /sbin/bectl mount $new_be $_mnt_temp_dir || finalize 1 "Cannot mount BE '$new_be'."
+    /sbin/bectl mount "$new_be" "$_mnt_temp_dir" || finalize 1 "Cannot mount BE '$new_be'."
     if [ $download_only -eq 0 ]; then
         # There is a bug where subdatasets is not mounted if parent dataset has canmount=off
-        /sbin/mount -t zfs "$(get_root_zpool_name)/ROOT/$new_be/usr/home" $_mnt_temp_dir/usr/home
+        /sbin/mount -t zfs "$(get_root_zpool_name)/ROOT/$new_be/usr/home" "$_mnt_temp_dir/usr/home"
     fi
-}
-
-restart_and_continue() {
-    /bin/echo "[+] Setting up startup script to continue upgrade..."
-    # enable script to be run on startup
-    /bin/echo "@reboot root sleep 60 && /bin/sh $SCRIPT -y" > "/etc/cron.d/vulture_update" || finalize 1 "Failed to setup startup script."
-    # Add a temporary message to end of MOTD to warn about the ongoing upgrade
-    reset_motd
-    add_to_motd "\033[5m\033[38;5;196mUpgrade in progress, your machine will reboot shortly, please wait patiently!\033[0m"
-    /usr/bin/touch ${temp_dir}/upgrading
-    /bin/echo "[-] Ok"
-    /bin/echo "[+] Rebooting system"
-    /sbin/shutdown -r now
-    /bin/echo "[-] Ok"
-    exit 0
-}
-
-restart_in_be_and_continue() {
-    /bin/echo "[+] Setting up startup script to continue upgrade in BE..."
-    # enable script to be run on startup
-    tmp_be_mount="$(/usr/bin/mktemp -d)"
-    /sbin/bectl mount "$new_be" "$tmp_be_mount" || finalize 1 "Could not mount Boot Environment."
-    /bin/echo "@reboot root sleep 60 && /bin/sh $SCRIPT -y" > "${tmp_be_mount}/etc/cron.d/vulture_update" || finalize 1 "Failed to setup startup script."
-    # Add a temporary message to end of MOTD to warn about the ongoing upgrade
-    /usr/bin/sed -i '' '$s/.*/[5m[38;5;196mUpgrade in progress, your machine will reboot shortly, please wait patiently![0m/' "${tmp_be_mount}/etc/motd.template"
-    /usr/bin/sed -i '' 's+welcome=/etc/motd+welcome=/var/run/motd+' "${tmp_be_mount}/etc/login.conf"
-    /usr/bin/cap_mkdb "${tmp_be_mount}/etc/login.conf"
-    /sbin/bectl umount "$new_be"
-    /usr/bin/touch "${tmp_be_mount}/${temp_dir}/upgrading"
-    /bin/echo "[-] Ok"
-    /bin/echo "[+] Rebooting system"
-    /sbin/shutdown -r now
-    /bin/echo "[-] Ok"
-    exit 0
-}
-
-clean_and_restart() {
-    /bin/echo "[+] Cleaning up..."
-    /bin/echo "@reboot root sleep 60 && /home/vlt-os/env/bin/python /home/vlt-os/vulture_os/manage.py toggle_maintenance --off && rm /etc/cron.d/vulture_update" > "/etc/cron.d/vulture_update"
-
-    /bin/echo "[+] Cleaning temporary dir..."
-    /bin/rm -rf $temp_dir
-    /bin/echo "[-] Done"
-
-    warn "WARNING: a new Boot Environment was created during the upgrade, please review existing BEs and delete those no longer necessary!"
-    /sbin/bectl list -a
-
-    info "[$(date -u -Iseconds)] Upgrade script finished!"
-
-    /bin/echo "[+] Rebooting system"
-    /sbin/shutdown -r now
-
-    exit 0
 }
 
 usage() {
@@ -279,12 +238,12 @@ initialize() {
     # Fix jails nameserver
     for jail in $JAILS_LIST; do
         case "$jail" in
-            mongodb) /bin/echo "nameserver 127.0.0.2" > /zroot/${jail}/etc/resolv.conf ;;
-            redis) /bin/echo "nameserver 127.0.0.3" > /zroot/${jail}/etc/resolv.conf ;;
-            rsyslog) /bin/echo "nameserver 127.0.0.4" > /zroot/${jail}/etc/resolv.conf ;;
-            haproxy) /bin/echo "nameserver 127.0.0.5" > /zroot/${jail}/etc/resolv.conf ;;
-            apache) /bin/echo "nameserver 127.0.0.6" > /zroot/${jail}/etc/resolv.conf ;;
-            portal) /bin/echo "nameserver 127.0.0.7" > /zroot/${jail}/etc/resolv.conf ;;
+            mongodb) /bin/echo "nameserver 127.0.0.2" > "/zroot/${jail}/etc/resolv.conf" ;;
+            redis) /bin/echo "nameserver 127.0.0.3" > "/zroot/${jail}/etc/resolv.conf" ;;
+            rsyslog) /bin/echo "nameserver 127.0.0.4" > "/zroot/${jail}/etc/resolv.conf" ;;
+            haproxy) /bin/echo "nameserver 127.0.0.5" > "/zroot/${jail}/etc/resolv.conf" ;;
+            apache) /bin/echo "nameserver 127.0.0.6" > "/zroot/${jail}/etc/resolv.conf" ;;
+            portal) /bin/echo "nameserver 127.0.0.7" > "/zroot/${jail}/etc/resolv.conf" ;;
             *) ;;
         esac
     done
@@ -301,20 +260,20 @@ finalize() {
         /bin/echo "[-] Done"
     fi
 
-    if get_BEs | grep -q $new_be; then
+    if get_BEs | grep -q "$new_be"; then
         /bin/echo "[+] Unmounting BE..."
         for jail in $JAILS_LIST; do
-            /sbin/umount $mnt_temp_dir/zroot/$jail/.jail_system 2>/dev/null
+            /sbin/umount "$mnt_temp_dir/zroot/$jail/.jail_system" 2>/dev/null
         done
-        /sbin/umount $mnt_temp_dir/dev/fd $mnt_temp_dir/dev $mnt_temp_dir/tmp $mnt_temp_dir/proc 2>/dev/null
-        /sbin/bectl umount -f $new_be
+        /sbin/umount "$mnt_temp_dir/dev/fd" "$mnt_temp_dir/dev" "$mnt_temp_dir/tmp" "$mnt_temp_dir/proc" 2>/dev/null
+        /sbin/bectl umount -f "$new_be"
         /bin/echo "[-] Done"
     fi
 
     if [ -n "$err_message" ]; then
-        if get_BEs | grep -q $new_be; then
+        if get_BEs | grep -q "$new_be"; then
             /bin/echo "[+] Cleaning BE..."
-            /sbin/bectl destroy -F $new_be || error "[!] Unable to destroy BE '$new_be'."
+            /sbin/bectl destroy -F "$new_be" || error "[!] Unable to destroy BE '$new_be'."
             /bin/echo "[-] Done"
         fi
 
@@ -329,11 +288,11 @@ finalize() {
         /sbin/shutdown -r +30s
     fi
 
-    exit $err_code
+    exit "$err_code"
 }
 
 
-if [ "$(uname -r | cut -d'.' -f1)" -gt "${major_version}" ]; then
+if [ "$(uname -r | cut -d'.' -f1)" -ge "${major_version}" ]; then
     /bin/echo "Your system seems to already be on HBSD${major_version}, nothing to do!"
     reset_motd
     exit 0
@@ -372,70 +331,60 @@ if [ $download_only -eq 0 ]; then
     fi
 fi
 
-# Automatically continue upgrade if a reboot occured
-if [ -f ${temp_dir}/upgrading ] && [ $_run_ok -eq 1 ]; then
-    log_file=/var/log/upgrade-major.log
-    /bin/echo "Output will be sent to $log_file."
-
-    exec 3>&1 4>&2
-    trap 'exec 2>&4 1>&3' 0 1 2 3
-    exec 1>>$log_file 2>&1
-fi
-
 check_preconditions
 initialize
 
 update_zfs_datasets
 
 mnt_temp_dir=$(mktemp -d)
-create_and_mount_BE $mnt_temp_dir
+create_and_mount_BE "$mnt_temp_dir"
 
 if [ $download_only -eq 0 ]; then
     # Fix pam.d
-    if [ -d $mnt_temp_dir/.jail_system ] && [ ! -h "$mnt_temp_dir/zroot/apache/etc/pam.d" ]; then
-        /bin/rm -vr $mnt_temp_dir/zroot/*/etc/pam.d || finalize 1 "Unable to fix pam.d, are jails datasets mounted?"
+    if [ -d "$mnt_temp_dir/.jail_system" ] && [ ! -h "$mnt_temp_dir/zroot/apache/etc/pam.d" ]; then
+        /bin/rm -vr "$mnt_temp_dir"/zroot/*/etc/pam.d || finalize 1 "Unable to fix pam.d, are jails datasets mounted?"
         for jail in $JAILS_LIST; do
-            /bin/ln -vs ../.jail_system/etc/pam.d $mnt_temp_dir/zroot/$jail/etc/pam.d
+            /bin/ln -vs ../.jail_system/etc/pam.d "$mnt_temp_dir/zroot/$jail/etc/pam.d"
         done
     fi
 fi
 
-download_system_update $mnt_temp_dir
+download_system_update "$mnt_temp_dir"
 
 if [ $download_only -eq 0 ]; then
     info "[+] Updating host system"
-    update_system $mnt_temp_dir
-    chmod 1777 $mnt_temp_dir/tmp $mnt_temp_dir/var/tmp
+    update_system "$mnt_temp_dir"
+    chmod 1777 "$mnt_temp_dir/tmp" "$mnt_temp_dir/var/tmp"
     info "[-] Done updating host system"
 
     for jail in $JAILS_LIST; do
         info "[+] Updating jail $jail"
-        update_system $mnt_temp_dir $jail
+        update_system "$mnt_temp_dir" "$jail"
         info "[-] Done updating jail $jail"
     done
 
     # Mounting all needed filesystems
-    /sbin/mount -t devfs devfs $mnt_temp_dir/dev
-    /sbin/mount -t tmpfs tmpfs $mnt_temp_dir/tmp
-    /sbin/mount -t fdescfs fdesc $mnt_temp_dir/dev/fd
-    /sbin/mount -t procfs proc $mnt_temp_dir/proc
+    /sbin/mount -t devfs devfs "$mnt_temp_dir/dev"
+    /sbin/mount -t tmpfs tmpfs "$mnt_temp_dir/tmp"
+    /sbin/mount -t fdescfs fdesc "$mnt_temp_dir/dev/fd"
+    /sbin/mount -t procfs proc "$mnt_temp_dir/proc"
     /sbin/sysctl hardening.harden_rtld=0
 
-    if [ -d $mnt_temp_dir/.jail_system ]; then
+    if [ -d "$mnt_temp_dir/.jail_system" ]; then
         for jail in $JAILS_LIST; do
-            /sbin/mount -t nullfs $mnt_temp_dir/.jail_system $mnt_temp_dir/zroot/$jail/.jail_system || finalize "Unable to mount .jail_system."
+            /sbin/mount -t nullfs "$mnt_temp_dir/.jail_system" "$mnt_temp_dir/zroot/$jail/.jail_system" || finalize "Unable to mount .jail_system."
         done
     fi
 
-    update_packages $mnt_temp_dir
+    update_packages "$mnt_temp_dir"
 
     reset_motd
-    /usr/bin/printf "\033[38;5;10mYour system is now on HardenedBSD ${major_version}, welcome back!\033[0m\n" >> $mnt_temp_dir/etc/motd.template
+    /usr/bin/printf "\033[38;5;10mYour system is now on HardenedBSD ${major_version}, welcome back!\033[0m\n" >> "$mnt_temp_dir/etc/motd.template"
 
-    /sbin/bectl activate $new_be || finalize 1 "Unable to activate BE, try to do it manually."
+    /sbin/bectl activate "$new_be" || finalize 1 "Unable to activate BE, try to do it manually."
 else
-    /sbin/mount -t devfs devfs $mnt_temp_dir/dev
-    download_packages $mnt_temp_dir
+    /sbin/mount -t devfs devfs "$mnt_temp_dir/dev"
+    download_packages "$mnt_temp_dir"
 fi
 
 finalize 0
