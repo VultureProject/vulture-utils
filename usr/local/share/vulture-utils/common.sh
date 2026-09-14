@@ -121,10 +121,11 @@ get_dataset_prefix() {
     _zpool="$(get_root_zpool_name)"
     _prefix="ROOT/$(get_current_BE)/"
 
-    if /sbin/zfs list -H -tfilesystem -oname "${_zpool}/${_prefix}usr"; then
-        return "${_prefix}"
+    if /sbin/zfs list -H -tfilesystem -oname "${_zpool}/${_prefix}usr" >/dev/null 2>&1; then
+        /usr/bin/printf "%s" "${_prefix}"
     else
-        return ""
+        /usr/bin/printf ""
+    fi
 }
 
 zfs_dataset_exists() {
@@ -336,10 +337,9 @@ snapshot_datasets() {
         return 1
     fi
 
-    for dataset in ${_datasets}; do
-        if zfs_dataset_exists "${dataset}"; then
-            /sbin/zfs snap "${_zpool}/${dataset}@${_snapshot_name}" || \
-                /sbin/zfs snap "${_zpool}/ROOT/$(get_current_BE)/${dataset}@${_snapshot_name}"
+    for _dataset in ${_datasets}; do
+        if zfs_dataset_exists "${_dataset}"; then
+            /sbin/zfs snap "${_zpool}/${_dataset_prefix}${_dataset}@${_snapshot_name}"
         fi
     done
 }
