@@ -79,20 +79,14 @@ download_packages() {
     info "[-] Done."
 
     for jail in $JAILS_LIST; do
-        if [ -d "$_mnt_temp_dir/.jail_system" ]; then
-            /sbin/mount -t nullfs "$_mnt_temp_dir/.jail_system" "$_mnt_temp_dir/zroot/$jail/.jail_system" || finalize 1 "Unable to mount .jail_system."
-        fi
-
         pkg_args="-c $_mnt_temp_dir/zroot/$jail -o ABI=FreeBSD:${major_version}:amd64"
 
         # shellcheck disable=SC2086
-        $pkg_env /usr/sbin/pkg $pkg_args clean -a || finalize 1 "Could not clear pkg cache for jail $jail."    
+        $pkg_env /usr/sbin/pkg $pkg_args clean -a || finalize 1 "Could not clear pkg cache for jail $jail."
         info "[+] Fetching $jail's packages..."
         # shellcheck disable=SC2086
         $pkg_env /usr/sbin/pkg $pkg_args fetch -u || finalize 1 "Failed to download packages for jail $jail."
         info "[-] Done."
-    
-        /sbin/umount "$_mnt_temp_dir/zroot/$jail/.jail_system" 2>/dev/null
     done
 }
 
@@ -177,19 +171,25 @@ update_zfs_datasets() {
 
 create_and_mount_BE() {
     _mnt_temp_dir="$1"
+    _zpool="$(get_root_zpool_name)"
 
     # Lock mongodb to prevent dataset corruption
     exec_mongo "db.fsyncLock()" > /dev/null
     /sbin/bectl create -r "$new_be" || info "BE '$new_be' already exists, using it."
     exec_mongo "db.fsyncUnlock()" > /dev/null
+
+    # Mount temporarily cache dir into new BE
+    /sbin/zfs snap "$_zpool/var/cache@$new_be"
+    /sbin/zfs clone -po "canmount=noauto" -o "mountpoint=$_mnt_temp_dir/var/cache" "$_zpool/var/cache@$new_be" "$_zpool/ROOT/$new_be/var/cache"
+
     # There is a bug where canmount=off is changed to noauto
-    /sbin/zfs set canmount=off "$(get_root_zpool_name)/ROOT/$new_be/usr"
+    /sbin/zfs set canmount=off "$_zpool/ROOT/$new_be/usr"
+    /sbin/zfs set canmount=off "$_zpool/ROOT/$new_be/var"
 
     /sbin/bectl mount "$new_be" "$_mnt_temp_dir" || finalize 1 "Cannot mount BE '$new_be'."
-    if [ $download_only -eq 0 ]; then
-        # There is a bug where subdatasets is not mounted if parent dataset has canmount=off
-        /sbin/mount -t zfs "$(get_root_zpool_name)/ROOT/$new_be/usr/home" "$_mnt_temp_dir/usr/home"
-    fi
+    # There is a bug where subdatasets is not mounted if parent dataset has canmount=off
+    /sbin/mount -t zfs "$_zpool/ROOT/$new_be/usr/home" "$_mnt_temp_dir/usr/home"
+    /sbin/mount -t zfs "$_zpool/ROOT/$new_be/var/cache" "$_mnt_temp_dir/var/cache"
 }
 
 usage() {
@@ -260,6 +260,8 @@ finalize() {
         done
         /sbin/umount "$mnt_temp_dir/dev/fd" "$mnt_temp_dir/dev" "$mnt_temp_dir/tmp" "$mnt_temp_dir/proc" 2>/dev/null
         /sbin/bectl umount -f "$new_be"
+        /sbin/zfs destroy -r "vulture/ROOT/$new_be/var"
+        /sbin/zfs destroy "vulture/var/cache@$new_be"
         info "[-] Done"
     fi
 
@@ -332,10 +334,7 @@ fi
 check_preconditions
 initialize
 
-update_zfs_datasets
-
-mnt_temp_dir=$(mktemp -d)
-create_and_mount_BE "$mnt_temp_dir"
+download_system_update /
 
 if [ $download_only -eq 0 ]; then
     # Fix pam.d
@@ -345,11 +344,12 @@ if [ $download_only -eq 0 ]; then
             /bin/ln -s ../.jail_system/etc/pam.d "$mnt_temp_dir/zroot/$jail/etc/pam.d"
         done
     fi
-fi
 
-download_system_update "$mnt_temp_dir"
+    update_zfs_datasets
 
-if [ $download_only -eq 0 ]; then
+    mnt_temp_dir=$(mktemp -d)
+    create_and_mount_BE "$mnt_temp_dir"
+
     info "[+] Updating host system..."
     update_system "$mnt_temp_dir"
     chmod 1777 "$mnt_temp_dir/tmp" "$mnt_temp_dir/var/tmp"
@@ -381,8 +381,7 @@ if [ $download_only -eq 0 ]; then
 
     /sbin/bectl activate "$new_be" || finalize 1 "Unable to activate BE, try to do it manually."
 else
-    /sbin/mount -t devfs devfs "$mnt_temp_dir/dev"
-    download_packages "$mnt_temp_dir"
+    download_packages /
 fi
 
 finalize 0
