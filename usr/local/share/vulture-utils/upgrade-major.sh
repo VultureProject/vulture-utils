@@ -8,7 +8,13 @@ COLOR_RED='\033[0;31m'
 
 temp_dir="/var/tmp/update"
 major_version=15
+pkg_url="http://pkg.vultureproject.org/"
+update_url="http://hbsd.vultureproject.org/"
+vulture_conf="Vulture.conf"
+pkg_ca="pkg.vultureproject.org"
+vulture_update_ca="ca.vultureproject.org"
 new_be="${SNAPSHOT_PREFIX}HBSD${major_version}"
+
 download_only=0
 auto_reboot=0
 _run_ok=0
@@ -18,7 +24,7 @@ download_system_update() {
 
     if [ ! -f ${temp_dir}/update.tar ]; then
         /usr/bin/sed -i ".bak" -E "s/[0-9]+-stable/${major_version}-stable/g" "$_mnt_temp_dir/etc/hbsd-update.conf"
-        /home/vlt-adm/system/register_vulture_repos.sh "$_mnt_temp_dir"
+        update_repositories "$_mnt_temp_dir"
 
         info "[+] Downloading system update..."
         /usr/sbin/hbsd-update -d -t "$temp_dir" -T -f -c "$_mnt_temp_dir/etc/hbsd-update.conf" || finalize 1 "System update download failed."
@@ -45,7 +51,7 @@ update_system() {
     fi
 
     /usr/bin/sed -i ".bak" -E "s/[0-9]+-stable/${major_version}-stable/g" "$_path/etc/hbsd-update.conf"
-    /home/vlt-adm/system/register_vulture_repos.sh "$_path"
+    update_repositories "$_path"
 
     info "[+] Updating base system..."
     # shellcheck disable=SC2086
@@ -88,6 +94,77 @@ download_packages() {
         $pkg_env /usr/sbin/pkg $pkg_args fetch -u || finalize 1 "Failed to download packages for jail $jail."
         info "[-] Done."
     done
+}
+
+update_repositories() {
+    prefix_dir="$1"
+    _log_header=""
+    _os_release="$(/usr/sbin/sysrc -f "$prefix_dir/etc/hbsd-update.conf" -n branch)"
+    _os_branch_version="$(/usr/sbin/sysrc -f "$prefix_dir/etc/hbsd-update.conf" -n os_version)"
+    _vulture_update_conf="hbsd-update-${_os_release}-${_os_branch_version}.conf"
+
+    if [ -n "$prefix_dir" ]; then
+        _log_header="[${prefix_dir}]"
+    fi
+    if [ -d "${prefix_dir}/usr/local/etc/pkg/repos/" ]; then
+        /usr/bin/printf "\033[38;5;172m[!]${_log_header} Disabling custom repos in ${prefix_dir}/usr/local/etc/pkg\033[0m\n"
+        /usr/bin/sed -i '' 's/enabled\(.*\)yes/enabled\1no/' "${prefix_dir}"/usr/local/etc/pkg/repos/*.conf
+        if [ -e "${prefix_dir}/usr/local/etc/pkg/repos/vulture.conf" ]; then
+            /bin/rm -f "${prefix_dir}/usr/local/etc/pkg/repos/vulture.conf"
+        fi
+        /bin/echo "[-]${_log_header} Done"
+    fi
+
+    /usr/bin/printf "[*]${_log_header} Backing up default configurations:"
+    for conf in "${prefix_dir}"/etc/hbsd-update*.conf ; do
+        conf=$(basename "${conf}")
+        if [ ! -f "${prefix_dir}/var/backups/${conf}.bak" ]; then
+            /usr/bin/printf "."
+            /bin/mv "${prefix_dir}/etc/$conf" "${prefix_dir}/var/backups/${conf}.bak"
+        fi
+    done
+    /bin/echo "."
+    /bin/echo "[*]${_log_header} Backups kept at ${prefix_dir}/var/backups/"
+    /bin/echo "[-]${_log_header} Done"
+
+    /usr/bin/printf "[+]${_log_header} Updating repositories "
+    if [ -n "$prefix_dir" ]; then
+        /usr/bin/printf "at $prefix_dir"
+    else
+        /usr/bin/printf "on system"
+    fi
+
+    if [ ! -f ${temp_dir}/${vulture_conf} ]; then
+        /usr/bin/fetch -q -o "${temp_dir}" ${pkg_url}${vulture_conf} || finalize 1 "[/] Failed to download $vulture_conf"
+        /usr/bin/printf "."
+    fi
+
+    /usr/bin/sed "s/current/${_os_release}/" "${temp_dir}/${vulture_conf}" > "${prefix_dir}/etc/pkg/${vulture_conf}"
+    /usr/bin/printf "."
+
+    if [ ! -f ${temp_dir}/${pkg_ca} ]; then
+        /usr/bin/fetch -q -o "${temp_dir}" ${pkg_url}${pkg_ca} || finalize 1 "[/] Failed to download $pkg_ca"
+        /usr/bin/printf "."
+    fi
+
+    /bin/mkdir -p "${prefix_dir}/usr/share/keys/pkg/trusted" && /bin/cp -f "${temp_dir}/${pkg_ca}" "${prefix_dir}/usr/share/keys/pkg/trusted/${pkg_ca}"
+    /usr/bin/printf "."
+
+    if [ ! -f "${temp_dir}/${_vulture_update_conf}" ]; then
+        /usr/bin/fetch -q -o "${temp_dir}" "${update_url}${_vulture_update_conf}" || finalize 1 "[/] Failed to download $_vulture_update_conf"
+        /usr/bin/printf "."
+    fi
+
+    /bin/mkdir -p "${prefix_dir}/etc" && /bin/cp -f "${temp_dir}/${_vulture_update_conf}" "${prefix_dir}/etc/hbsd-update.conf"
+    /usr/bin/printf "."
+
+    if [ ! -f ${temp_dir}/${vulture_update_ca} ]; then
+        /usr/bin/fetch -q -o "${temp_dir}" ${update_url}${vulture_update_ca} || finalize 1 "[/] Failed to download $vulture_update_ca"
+        /usr/bin/printf "."
+    fi
+
+    /bin/mkdir -p "${prefix_dir}/usr/share/keys/hbsd-update/trusted/" && /bin/cp -f "${temp_dir}/${vulture_update_ca}" "${prefix_dir}/usr/share/keys/hbsd-update/trusted/${vulture_update_ca}"
+    /bin/echo "."
 }
 
 update_packages() {
