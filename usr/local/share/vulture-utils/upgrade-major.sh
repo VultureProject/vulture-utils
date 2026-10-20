@@ -239,6 +239,9 @@ update_zfs_datasets() {
         /sbin/zfs rename -u "$_zpool/$jail" "$_zpool/ROOT/$_current_be/$jail"
     done
 
+    # Ensure zpool root is not mounted
+    /sbin/zfs set mountpoint=none canmount=off "$_zpool"
+
     # Rename home dataset
     if ! /sbin/zfs list -H -oname | grep -Eq "^${_zpool}/ROOT/$_current_be(/usr)?/home\$"; then
         /sbin/zfs set canmount=noauto "$_zpool/usr/home"
