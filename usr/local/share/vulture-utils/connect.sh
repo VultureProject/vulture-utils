@@ -1,4 +1,5 @@
 #!/usr/bin/env sh
+# shellcheck disable=SC1091
 
 . /usr/local/share/vulture-utils/common.sh
 
@@ -12,7 +13,7 @@ VALID_JAILS="mongodb redis"
 #############
 usage() {
     echo "USAGE connect [jail name]"
-    echo "This script is a wrapper to connect easily to mongodb or redis"
+    echo "This command is a wrapper to connect easily to mongodb or redis"
     echo ""
     echo "OPTIONS:"
     echo "	-h	Display this help message"

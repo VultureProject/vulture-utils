@@ -33,6 +33,7 @@ Usage:
 Available Commands:
 	upgrade-os	Upgrade the system.
 	upgrade-pkg	Upgrade the packages.
+	upgrade-major	Migrate system to next major version.
 	snapshot	Create and manage machine ZFS snapshots.
 	restore		Use Snapshots to rollback all or parts of the machine.
 	connect		Connect to mongodb and redis easily.
@@ -63,7 +64,7 @@ case "${CMD}" in
             PARAMS='-h'
         fi
         ;;
-    upgrade-os|upgrade-pkg)
+    upgrade-os|upgrade-major|upgrade-pkg)
         # Nothing to do specificaly for there commands (apart from launching them)
         ;;
     connect)
