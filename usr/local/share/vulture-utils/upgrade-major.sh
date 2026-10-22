@@ -8,6 +8,7 @@ COLOR_RED='\033[0;31m'
 
 temp_dir="/var/tmp/update"
 major_version=15
+target_mongodb_version="mongodb70"
 pkg_url="http://pkg.vultureproject.org/"
 update_url="http://hbsd.vultureproject.org/"
 vulture_conf="Vulture.conf"
@@ -296,6 +297,13 @@ check_preconditions() {
     # Check remaining disk space larger than 8GB
     if [ "$(/sbin/zpool list -Hpo free)" -lt 8000000000 ]; then
         finalize 1 "Free disk space is insufficient."
+    fi
+
+    # Check mongodb service is updated
+    _current_mongodb_package="$(pkg -j mongodb info -Ex "mongodb[0-9]+")"
+    _current_mongodb_package="${_current_mongodb_package%-*}"
+    if [ "${_current_mongodb_package}" != "${target_mongodb_version}" ]; then
+        finalize 1 "Wrong mongodb version '${_current_mongodb_package}', please upgrade"
     fi
 }
 
