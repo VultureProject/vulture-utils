@@ -31,7 +31,7 @@ download_system_update() {
         /usr/sbin/hbsd-update -d -t "$temp_dir" -T -f -c "$_mnt_temp_dir/etc/hbsd-update.conf" || finalize 1 "System update download failed."
         info "[-] Done."
     else
-        info "[+] Upgrade file found, nothing to do."
+        info "[+] OS upgrade files found, nothing to download."
     fi
 }
 
@@ -100,8 +100,8 @@ download_packages() {
 update_repositories() {
     prefix_dir="$1"
     _log_header=""
-    _os_release="$(/usr/sbin/sysrc -f "$prefix_dir/etc/hbsd-update.conf" -n branch)"
-    _os_branch_version="$(/usr/sbin/sysrc -f "$prefix_dir/etc/hbsd-update.conf" -n os_version)"
+    _os_release="$(/usr/sbin/sysrc -f "$prefix_dir/etc/hbsd-update.conf" -n branch)" || finalize 1 "Could not get current OS release, please upgrade hbsd-update.conf file."
+    _os_branch_version="$(/usr/sbin/sysrc -f "$prefix_dir/etc/hbsd-update.conf" -n os_version)" || finalize 1 "Could not get current OS branch version, please upgrade hbsd-update.conf file."
     _vulture_update_conf="hbsd-update-${_os_release}-${_os_branch_version}.conf"
 
     if [ -n "$prefix_dir" ]; then
@@ -287,6 +287,7 @@ check_preconditions() {
     if [ "$(/usr/bin/id -u)" != "0" ]; then
         error_and_exit "This script must be run as root."
     fi
+
     # Show necessary packages to be updated
     if /usr/sbin/pkg version -qRl '<' | grep 'vulture-' > /dev/null; then
         /usr/bin/printf "${COLOR_RED}"
@@ -294,6 +295,7 @@ check_preconditions() {
         /usr/bin/printf "${COLOR_OFF}"
         finalize 1 "Some packages are not up to date, please run 'vlt-admin upgrade-pkg' before trying to migrate."
     fi
+
     # Check remaining disk space larger than 8GB
     if [ "$(/sbin/zpool list -Hpo free)" -lt 8000000000 ]; then
         finalize 1 "Free disk space is insufficient."
