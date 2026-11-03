@@ -468,8 +468,9 @@ if [ $download_only -eq 0 ]; then
 
     reset_motd
     /usr/bin/printf "\033[38;5;10mYour system is now on HardenedBSD ${major_version}, welcome back!\033[0m\n" >> "$mnt_temp_dir/etc/motd.template"
+    /usr/bin/printf "\033[38;5;172m[!]Your system is only temporary, finish upgrade by running 'bectl activate ${new_be}' once validated!\033[0m\n" >> "$mnt_temp_dir/etc/motd.template"
 
-    /sbin/bectl activate "$new_be" || finalize 1 "Unable to activate BE, try to do it manually."
+    /sbin/bectl activate -t "$new_be" || finalize 1 "Unable to activate BE, try to do it manually."
 else
     download_packages /
 fi
