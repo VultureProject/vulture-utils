@@ -3,10 +3,7 @@
 
 . /usr/local/share/vulture-utils/common.sh
 
-COLOR_OFF='\033[0m'
-COLOR_RED='\033[0;31m'
-
-temp_dir="/var/tmp/update"
+temp_dir="/var/tmp/upgrade-major"
 major_version=15
 target_mongodb_version="mongodb70"
 pkg_url="http://pkg.vultureproject.org/"
@@ -21,14 +18,9 @@ auto_reboot=0
 _run_ok=0
 
 download_system_update() {
-    _mnt_temp_dir="$1"
-
     if [ ! -f ${temp_dir}/update.tar ]; then
-        /usr/bin/sed -i ".bak" -E "s/[0-9]+-stable/${major_version}-stable/g" "$_mnt_temp_dir/etc/hbsd-update.conf"
-        update_repositories "$_mnt_temp_dir"
-
         info "[+] Downloading system update..."
-        /usr/sbin/hbsd-update -d -t "$temp_dir" -T -f -c "$_mnt_temp_dir/etc/hbsd-update.conf" || finalize 1 "System update download failed."
+        /usr/sbin/hbsd-update -d -t "$temp_dir" -T -f -c "$temp_dir/hbsd-update.conf" || finalize 1 "System update download failed."
         info "[-] Done."
     else
         info "[+] OS upgrade files found, nothing to download."
@@ -51,7 +43,6 @@ update_system() {
         _path="$_mnt_temp_dir"
     fi
 
-    /usr/bin/sed -i ".bak" -E "s/[0-9]+-stable/${major_version}-stable/g" "$_path/etc/hbsd-update.conf"
     update_repositories "$_path"
 
     info "[+] Updating base system..."
@@ -64,7 +55,7 @@ download_packages() {
     _mnt_temp_dir="$1"
 
     pkg_env="/usr/bin/env IGNORE_OSVERSION=yes ASSUME_ALWAYS_YES=yes"
-    pkg_args="-c $_mnt_temp_dir -o ABI=FreeBSD:${major_version}:amd64"
+    pkg_args="-c $_mnt_temp_dir -o ABI=FreeBSD:${major_version}:amd64 -o PKG_CACHEDIR=${temp_dir}/var/cache/pkg"
 
     info "[+] Updating root pkg repository catalogue..."
     # shellcheck disable=SC2086
@@ -86,7 +77,7 @@ download_packages() {
     info "[-] Done."
 
     for jail in $JAILS_LIST; do
-        pkg_args="-c $_mnt_temp_dir/zroot/$jail -o ABI=FreeBSD:${major_version}:amd64"
+        pkg_args="-c $_mnt_temp_dir/zroot/$jail -o ABI=FreeBSD:${major_version}:amd64 -o PKG_CACHEDIR=${temp_dir}/var/cache/pkg"
 
         # shellcheck disable=SC2086
         $pkg_env /usr/sbin/pkg $pkg_args clean -a || finalize 1 "Could not clear pkg cache for jail $jail."
@@ -97,18 +88,54 @@ download_packages() {
     done
 }
 
+setup_new_settings() {
+    _os_release="$(/usr/sbin/sysrc -f "/etc/hbsd-update.conf" -n branch)" || finalize 1 "Could not get current OS release, please upgrade hbsd-update.conf file."
+    _os_branch_version="$(/usr/sbin/sysrc -f "/etc/hbsd-update.conf" -n os_version)" || finalize 1 "Could not get current OS branch version, please upgrade hbsd-update.conf file."
+    _vulture_update_conf="hbsd-update-${_os_release}-${_os_branch_version}.conf"
+
+    # Main pkg conf file
+    /bin/mkdir -p ${temp_dir}/var/db/pkg
+    /bin/mkdir -p ${temp_dir}/var/cache/pkg
+
+    # PKG Vulture repo
+    if [ ! -f ${temp_dir}/${vulture_conf} ]; then
+        /usr/bin/fetch -q -o "${temp_dir}" ${pkg_url}${vulture_conf} || finalize 1 "[/] Failed to download $vulture_conf"
+        /usr/bin/printf "."
+        /usr/bin/sed -i "" "s/current/${_os_release}/" "${temp_dir}/${vulture_conf}"
+        /usr/bin/sed -i "" "s#/usr/share/keys/pkg/trusted/${pkg_ca}#${temp_dir}/${pkg_ca}#" "${temp_dir}/${vulture_conf}"
+        /usr/bin/printf "."
+    fi
+
+    # PKG CA Vulture repo
+    if [ ! -f ${temp_dir}/${pkg_ca} ]; then
+        /usr/bin/fetch -q -o "${temp_dir}" ${pkg_url}${pkg_ca} || finalize 1 "[/] Failed to download $pkg_ca"
+        /usr/bin/printf "."
+    fi
+
+    # hbsd-update configuration file
+    if [ ! -f "${temp_dir}/hbsd-update.conf" ]; then
+        /usr/bin/fetch -q -o "${temp_dir}/hbsd-update.conf" "${update_url}${_vulture_update_conf}" || finalize 1 "[/] Failed to download $_vulture_update_conf"
+        /usr/bin/sed -i "" -E "s/[0-9]+-stable/${major_version}-stable/g" "${temp_dir}/hbsd-update.conf"
+        /usr/bin/sed -i "" "s#/usr/share/keys/hbsd-update/trusted/${vulture_update_ca}#${temp_dir}/${vulture_update_ca}#" "${temp_dir}/hbsd-update.conf"
+        /usr/bin/printf "."
+    fi
+
+    # hbsd-update CA file
+    if [ ! -f ${temp_dir}/${vulture_update_ca} ]; then
+        /usr/bin/fetch -q -o "${temp_dir}" ${update_url}${vulture_update_ca} || finalize 1 "[/] Failed to download $vulture_update_ca"
+        /usr/bin/printf "."
+    fi
+}
+
 update_repositories() {
     prefix_dir="$1"
     _log_header=""
-    _os_release="$(/usr/sbin/sysrc -f "$prefix_dir/etc/hbsd-update.conf" -n branch)" || finalize 1 "Could not get current OS release, please upgrade hbsd-update.conf file."
-    _os_branch_version="$(/usr/sbin/sysrc -f "$prefix_dir/etc/hbsd-update.conf" -n os_version)" || finalize 1 "Could not get current OS branch version, please upgrade hbsd-update.conf file."
-    _vulture_update_conf="hbsd-update-${_os_release}-${_os_branch_version}.conf"
 
     if [ -n "$prefix_dir" ]; then
         _log_header="[${prefix_dir}]"
     fi
     if [ -d "${prefix_dir}/usr/local/etc/pkg/repos/" ]; then
-        /usr/bin/printf "\033[38;5;172m[!]${_log_header} Disabling custom repos in ${prefix_dir}/usr/local/etc/pkg\033[0m\n"
+        /usr/bin/printf "${COLOR_YELLOW}[!]${_log_header} Disabling custom repos in ${prefix_dir}/usr/local/etc/pkg${COLOR_RESET}\n"
         /usr/bin/sed -i '' 's/enabled\(.*\)yes/enabled\1no/' "${prefix_dir}"/usr/local/etc/pkg/repos/*.conf
         if [ -e "${prefix_dir}/usr/local/etc/pkg/repos/vulture.conf" ]; then
             /bin/rm -f "${prefix_dir}/usr/local/etc/pkg/repos/vulture.conf"
@@ -135,36 +162,21 @@ update_repositories() {
         /usr/bin/printf "on system"
     fi
 
-    if [ ! -f ${temp_dir}/${vulture_conf} ]; then
-        /usr/bin/fetch -q -o "${temp_dir}" ${pkg_url}${vulture_conf} || finalize 1 "[/] Failed to download $vulture_conf"
-        /usr/bin/printf "."
-    fi
+    /bin/cp -f "${temp_dir}/${vulture_conf}" "${prefix_dir}/etc/pkg/${vulture_conf}" || finalize 1 "Could not copy new pkg configuration to destination"
+    /usr/bin/sed -i '' "s#${temp_dir}/${pkg_ca}#/usr/share/keys/pkg/trusted/${pkg_ca}#" "${prefix_dir}/etc/pkg/${vulture_conf}"
+    /usr/bin/printf "." 
 
-    /usr/bin/sed "s/current/${_os_release}/" "${temp_dir}/${vulture_conf}" > "${prefix_dir}/etc/pkg/${vulture_conf}"
+    /bin/mkdir -p "${prefix_dir}/usr/share/keys/pkg/trusted"
+    /bin/cp -f "${temp_dir}/${pkg_ca}" "${prefix_dir}/usr/share/keys/pkg/trusted/${pkg_ca}" || finalize 1 "Could not copy new pkg CA to destination"
     /usr/bin/printf "."
 
-    if [ ! -f ${temp_dir}/${pkg_ca} ]; then
-        /usr/bin/fetch -q -o "${temp_dir}" ${pkg_url}${pkg_ca} || finalize 1 "[/] Failed to download $pkg_ca"
-        /usr/bin/printf "."
-    fi
-
-    /bin/mkdir -p "${prefix_dir}/usr/share/keys/pkg/trusted" && /bin/cp -f "${temp_dir}/${pkg_ca}" "${prefix_dir}/usr/share/keys/pkg/trusted/${pkg_ca}"
+    /bin/mkdir -p "${prefix_dir}/etc"
+    /bin/cp -f "${temp_dir}/hbsd-update.conf" "${prefix_dir}/etc/hbsd-update.conf" || finalize 1 "Could not copy new hbsd-update configuration to destination"
+    /usr/bin/sed -i '' "s#${temp_dir}/${vulture_update_ca}#/usr/share/keys/hbsd-update/trusted/${vulture_update_ca}#" "${prefix_dir}/etc/hbsd-update.conf"
     /usr/bin/printf "."
 
-    if [ ! -f "${temp_dir}/${_vulture_update_conf}" ]; then
-        /usr/bin/fetch -q -o "${temp_dir}" "${update_url}${_vulture_update_conf}" || finalize 1 "[/] Failed to download $_vulture_update_conf"
-        /usr/bin/printf "."
-    fi
-
-    /bin/mkdir -p "${prefix_dir}/etc" && /bin/cp -f "${temp_dir}/${_vulture_update_conf}" "${prefix_dir}/etc/hbsd-update.conf"
-    /usr/bin/printf "."
-
-    if [ ! -f ${temp_dir}/${vulture_update_ca} ]; then
-        /usr/bin/fetch -q -o "${temp_dir}" ${update_url}${vulture_update_ca} || finalize 1 "[/] Failed to download $vulture_update_ca"
-        /usr/bin/printf "."
-    fi
-
-    /bin/mkdir -p "${prefix_dir}/usr/share/keys/hbsd-update/trusted/" && /bin/cp -f "${temp_dir}/${vulture_update_ca}" "${prefix_dir}/usr/share/keys/hbsd-update/trusted/${vulture_update_ca}"
+    /bin/mkdir -p "${prefix_dir}/usr/share/keys/hbsd-update/trusted/"
+    /bin/cp -f "${temp_dir}/${vulture_update_ca}" "${prefix_dir}/usr/share/keys/hbsd-update/trusted/${vulture_update_ca}" || finalize 1 "Could not copy new hbsd-update CA to destination"
     /bin/echo "."
 }
 
@@ -172,7 +184,7 @@ update_packages() {
     _mnt_temp_dir="$1"
 
     pkg_env="/usr/bin/env IGNORE_OSVERSION=yes ASSUME_ALWAYS_YES=yes"
-    pkg_args="-c $_mnt_temp_dir"
+    pkg_args="-c $_mnt_temp_dir -o PKG_CACHEDIR=${temp_dir}/var/cache/pkg"
 
     # Delete me
     # shellcheck disable=SC2086
@@ -193,7 +205,7 @@ update_packages() {
     info "[-] Done."
 
     for jail in $JAILS_LIST; do
-        pkg_args="-c $_mnt_temp_dir/zroot/$jail"
+        pkg_args="-c $_mnt_temp_dir/zroot/$jail -o PKG_CACHEDIR=${temp_dir}/var/cache/pkg"
 
         info "[+] Upgrading $jail's packages..."
         # shellcheck disable=SC2086
@@ -210,6 +222,13 @@ update_packages() {
 update_zfs_datasets() {
     _zpool="$(get_root_zpool_name)"
     _current_be="$(get_current_BE)"
+
+    if [ -z "$_zpool" ]; then
+        finalize 1 "Could not evaluate current ZPOOL name, aborting!"
+    fi
+    if [ -z "$_current_be" ]; then
+        finalize 1 "Could not evaluate current BootEnvironment name, aborting!"
+    fi
 
     # Rename jails datasets
     /usr/sbin/sysrc zfs_enable=YES
@@ -259,10 +278,6 @@ create_and_mount_BE() {
     /sbin/bectl create -r "$new_be" || info "BE '$new_be' already exists, using it."
     exec_mongo "db.fsyncUnlock()" > /dev/null
 
-    # Mount temporarily cache dir into new BE
-    /sbin/zfs snap "$_zpool/var/cache@$new_be"
-    /sbin/zfs clone -po "canmount=noauto" -o "mountpoint=$_mnt_temp_dir/var/cache" "$_zpool/var/cache@$new_be" "$_zpool/ROOT/$new_be/var/cache"
-
     # There is a bug where canmount=off is changed to noauto
     /sbin/zfs set canmount=off "$_zpool/ROOT/$new_be/usr"
     /sbin/zfs set canmount=off "$_zpool/ROOT/$new_be/var"
@@ -270,7 +285,6 @@ create_and_mount_BE() {
     /sbin/bectl mount "$new_be" "$_mnt_temp_dir" || finalize 1 "Cannot mount BE '$new_be'."
     # There is a bug where subdatasets is not mounted if parent dataset has canmount=off
     /sbin/mount -t zfs "$_zpool/ROOT/$new_be/usr/home" "$_mnt_temp_dir/usr/home"
-    /sbin/mount -t zfs "$_zpool/ROOT/$new_be/var/cache" "$_mnt_temp_dir/var/cache"
 }
 
 usage() {
@@ -292,7 +306,7 @@ check_preconditions() {
     if /usr/sbin/pkg version -qRl '<' | grep 'vulture-' > /dev/null; then
         /usr/bin/printf "${COLOR_RED}"
         /usr/sbin/pkg version -qRl '<' | grep 'vulture-'
-        /usr/bin/printf "${COLOR_OFF}"
+        /usr/bin/printf "${COLOR_RESET}"
         finalize 1 "Some packages are not up to date, please run 'vlt-admin upgrade-pkg' before trying to migrate."
     fi
 
@@ -350,8 +364,6 @@ finalize() {
         done
         /sbin/umount "$mnt_temp_dir/dev/fd" "$mnt_temp_dir/dev" "$mnt_temp_dir/tmp" "$mnt_temp_dir/proc" 2>/dev/null
         /sbin/bectl umount -f "$new_be"
-        /sbin/zfs destroy -r "vulture/ROOT/$new_be/var"
-        /sbin/zfs destroy "vulture/var/cache@$new_be"
         info "[-] Done"
     fi
 
@@ -424,7 +436,8 @@ fi
 check_preconditions
 initialize
 
-download_system_update /
+setup_new_settings
+download_system_update
 
 if [ $download_only -eq 0 ]; then
     # Fix pam.d
@@ -467,8 +480,8 @@ if [ $download_only -eq 0 ]; then
     update_packages "$mnt_temp_dir"
 
     reset_motd
-    /usr/bin/printf "\033[38;5;10mYour system is now on HardenedBSD ${major_version}, welcome back!\033[0m\n" >> "$mnt_temp_dir/etc/motd.template"
-    /usr/bin/printf "\033[38;5;172m[!]Your system is only temporary, finish upgrade by running 'bectl activate ${new_be}' once validated!\033[0m\n" >> "$mnt_temp_dir/etc/motd.template"
+    /usr/bin/printf "${COLOR_GREEN}Your system is now on HardenedBSD ${major_version}, welcome back!${COLOR_RESET}\n" >> "$mnt_temp_dir/etc/motd.template"
+    /usr/bin/printf "${COLOR_YELLOW}[!]Your system is only temporary, finish upgrade by running 'bectl activate ${new_be}' once validated!${COLOR_RESET}\n" >> "$mnt_temp_dir/etc/motd.template"
 
     /sbin/bectl activate -t "$new_be" || finalize 1 "Unable to activate BE, try to do it manually."
 else
