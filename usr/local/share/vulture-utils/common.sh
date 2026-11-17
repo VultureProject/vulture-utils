@@ -12,7 +12,7 @@ JAILS_LIST="apache haproxy mongodb portal redis rsyslog"
 
 AVAILABLE_DATASET_TYPES="JAIL DB HOMES TMPVAR"
 JAIL_DATASETS="apache apache/var apache/var/db apache/usr portal portal/var portal/var/db portal/usr haproxy haproxy/var haproxy/var/db haproxy/usr mongodb mongodb/var mongodb/usr redis redis/var redis/var/db redis/usr rsyslog rsyslog/var rsyslog/var/db rsyslog/usr"
-DB_DATASETS="mongodb/var/db"
+DB_DATASETS="databases/mongodb databases/redis"
 HOMES_DATASETS="usr/home"
 TMPVAR_DATASETS="apache/var/log portal/var/log haproxy/var/log mongodb/var/log redis/var/log rsyslog/var/log tmp var/audit var/cache var/crash var/log var/tmp"
 # 'usr' and 'var' are set to nomount, so they don't hold any data (data is held by the root dataset)
@@ -128,6 +128,22 @@ get_dataset_prefix() {
     fi
 }
 
+has_legacy_datasets() {
+    if ! contains_word "$(get_dataset_prefix)" "$(get_current_BE)"; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+has_databases_dataset() {
+    if zfs_dataset_exists databases; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 zfs_dataset_exists() {
     _dataset="$1"
     _zpool="$(get_root_zpool_name)"
@@ -138,7 +154,7 @@ zfs_dataset_exists() {
     fi
 
     # Migrated datasets are tied to current BE
-    if /sbin/zfs list -H -oname | grep -q "^${_zpool}/${_dataset_prefix}${_dataset}\$"; then
+    if /sbin/zfs list -H -oname | /usr/bin/grep -Eq "^${_zpool}/(${_dataset_prefix})?${_dataset}$"; then
         return 0
     else
         return 1
@@ -293,7 +309,6 @@ delete_snapshot_from_datasets() {
     _datasets="$1" # space-separated list of datasets
     _snap_to_delete="$2" # snapshot name to delete
     _zpool="$(get_root_zpool_name)"
-    _dataset_prefix="$(get_dataset_prefix)"
     _deleted_count=0
 
     if [ -z "${_datasets}" ] || [ -z "${_snap_to_delete}" ]; then
@@ -303,6 +318,7 @@ delete_snapshot_from_datasets() {
 
     for _dataset in ${_datasets}; do
         if zfs_dataset_exists "${_dataset}"; then
+            _dataset_prefix="$(if ! contains_word "${_dataset}" "databases"; then get_dataset_prefix; fi)"
             _existing_snaps="$(list_snapshots "${_dataset}")"
             if contains_word "${_existing_snaps}" "${_snap_to_delete}"; then
                 echo "Deleting snapshot '${_zpool}/${_dataset_prefix}${_dataset}@${_snap_to_delete}'"
@@ -331,7 +347,6 @@ snapshot_datasets() {
     _datasets="$1"
     _snapshot_name="$2"
     _zpool="$(get_root_zpool_name)"
-    _dataset_prefix="$(get_dataset_prefix)"
 
     if [ -z "${_datasets}" ] || [ -z "${_snapshot_name}" ]; then
         return 1
@@ -339,7 +354,15 @@ snapshot_datasets() {
 
     for _dataset in ${_datasets}; do
         if zfs_dataset_exists "${_dataset}"; then
-            /sbin/zfs snap "${_zpool}/${_dataset_prefix}${_dataset}@${_snapshot_name}"
+            _dataset_prefix="$(if ! contains_word "${_dataset}" "databases"; then get_dataset_prefix; fi)"
+            # Support renamed jail datasets
+            if has_legacy_datasets || contains_word "${_dataset}" "databases"; then
+                /sbin/zfs snap "${_zpool}/${_dataset_prefix}${_dataset}@${_snapshot_name}"
+            else
+                # Jails datasets are now held by Boot Environment
+                if list_inactive_BEs | /usr/bin/grep -q "${_snapshot_name}"; then continue; fi
+                /sbin/bectl create -r "${_snapshot_name}"
+            fi
         fi
     done
 }
@@ -347,13 +370,13 @@ snapshot_datasets() {
 list_snapshots() {
     _dataset="$1"
     _zpool="$(get_root_zpool_name)"
-    _dataset_prefix="$(get_dataset_prefix)"
 
     if [ -z "${_dataset}" ]; then
         return 1
     fi
 
     if zfs_dataset_exists "${_dataset}"; then
+        _dataset_prefix="$(if ! contains_word "${_dataset}" "databases"; then get_dataset_prefix; fi)"
         # List snapshot names only, ordering by descending order (most recent first)
         /sbin/zfs list -H -tsnap -oname -Screation "${_zpool}/${_dataset_prefix}${_dataset}" |\
             # Get snapshot name part (remove dataset part)
@@ -369,7 +392,6 @@ clean_previous_snapshots() {
     _datasets="$1"
     _number_to_keep="$2"
     _zpool="$(get_root_zpool_name)"
-    _dataset_prefix="$(get_dataset_prefix)"
 
     # arguments are mandatory
     if [ -z "${_datasets}" ] || [ -z "${_number_to_keep}" ]; then
@@ -382,6 +404,7 @@ clean_previous_snapshots() {
 
     for _dataset in ${_datasets}; do
         if zfs_dataset_exists "${_dataset}"; then
+            _dataset_prefix="$(if ! contains_word "${_dataset}" "databases"; then get_dataset_prefix; fi)"
             # most recent are first in list
             _ordered_snapshots="$(list_snapshots "${_dataset}")"
 
@@ -403,7 +426,6 @@ tag_snapshots_for_rollback() {
     _datasets="$1"
     _snapshot="$2"
     _zpool="$(get_root_zpool_name)"
-    _dataset_prefix="$(get_dataset_prefix)"
 
     # arguments are mandatory
     if [ -z "${_datasets}" ] || [ -z "${_snapshot}" ]; then
@@ -411,6 +433,7 @@ tag_snapshots_for_rollback() {
     fi
     for _dataset in ${_datasets}; do
         if zfs_dataset_exists "${_dataset}"; then
+            _dataset_prefix="$(if ! contains_word "${_dataset}" "databases"; then get_dataset_prefix; fi)"
             echo "will rollback to ${_zpool}/${_dataset_prefix}${_dataset}@${_snapshot}"
             /sbin/zfs set snapshot:restore=YES "${_zpool}/${_dataset_prefix}${_dataset}@${_snapshot}"
         fi
@@ -420,7 +443,6 @@ tag_snapshots_for_rollback() {
 list_pending_rollbacks() {
     _dataset="$1"
     _zpool="$(get_root_zpool_name)"
-    _dataset_prefix="$(get_dataset_prefix)"
     _snap_name=""
 
     # argument is mandatory
@@ -429,6 +451,7 @@ list_pending_rollbacks() {
     fi
 
     if zfs_dataset_exists "${_dataset}"; then
+        _dataset_prefix="$(if ! contains_word "${_dataset}" "databases"; then get_dataset_prefix; fi)"
         /sbin/zfs list -H -tsnap -o name,snapshot:restore "${_zpool}/${_dataset_prefix}${_dataset}" 2>/dev/null |\
         while read -r _name _status; do
             if [ "${_status}" = "YES" ]; then
@@ -442,7 +465,6 @@ list_pending_rollbacks() {
 clean_rollback_state_on_datasets() {
     _datasets="$1"
     _zpool="$(get_root_zpool_name)"
-    _dataset_prefix="$(get_dataset_prefix)"
 
     # argument is mandatory
     if [ -z "${_datasets}" ]; then
@@ -451,6 +473,7 @@ clean_rollback_state_on_datasets() {
 
     for _dataset in ${_datasets}; do
         if zfs_dataset_exists "${_dataset}"; then
+            _dataset_prefix="$(if ! contains_word "${_dataset}" "databases"; then get_dataset_prefix; fi)"
             _snapshot_list="$(list_pending_rollbacks "${_dataset}")"
             for _snapshot in ${_snapshot_list}; do
                 echo "Resetting rollback state for ${_dataset}"
