@@ -7,7 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
-- [UPGRADE-OS] New 'upgrade-major' command to upgrade whole system to the next OS major
+- [UPGRADE-MAJOR] New 'upgrade-major' command to upgrade whole system to the next OS major
+- [SNAPSHOT] Support renamed datasets
+### Fixed
+- [UPGRADE-MAJOR] Move mongodb and redis database files in a separate dataset
 
 
 ## [1.1.1] - 2026-09-11

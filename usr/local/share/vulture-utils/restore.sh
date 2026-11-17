@@ -25,8 +25,8 @@ usage() {
     echo "OPTIONS:"
     echo "	-A	act on all underlying datasets"
     echo "	-S	act on the system dataset(s)"
-    echo "	-J	act on the jail(s) dataset(s)"
-    echo "	-H	act on the home dataset(s)"
+    echo "	-J	act on the jail(s) dataset(s) (kept for legacy usage)"
+    echo "	-H	act on the home dataset(s) (kept for legacy usage)"
     echo "	-D	act on the databases dataset(s)"
     echo "	-T	act on the tmp/var dataset(s)"
     echo "	-c	Reset selected dataset(s) rollback triggers"
@@ -43,17 +43,21 @@ fi
 
 while getopts 'hASJHDTclr:' opt; do
     case "${opt}" in
-        A)  _rollback_datasets_list="SYSTEM JAIL DB HOMES TMPVAR";
+        A)  _rollback_datasets_list="SYSTEM DB TMPVAR";
             rollback_system=1;
             ;;
         S)  # the system is snapshotted using bectl, and not regular snapshots
             rollback_system=1;
             ;;
-        J)  _rollback_datasets_list="${_rollback_datasets_list} JAIL"
+        J)  if has_legacy_datasets; then
+                _rollback_datasets_list="${_rollback_datasets_list} JAIL";
+            fi
             ;;
         D)  _rollback_datasets_list="${_rollback_datasets_list} DB"
             ;;
-        H)  _rollback_datasets_list="${_rollback_datasets_list} HOMES"
+        H)  if has_legacy_datasets; then
+                _rollback_datasets_list="${_rollback_datasets_list} HOMES"
+            fi
             ;;
         T)  _rollback_datasets_list="${_rollback_datasets_list} TMPVAR"
             ;;
@@ -132,9 +136,13 @@ for _type in ${AVAILABLE_DATASET_TYPES}; do
 
     if [ "${list_rollbacks}" -gt 0 ]; then
         printf "%s:\t" "${_type}"
-        for _rollback in $_rollback_list; do
-            printf "%s\t" "$_rollback"
-        done
+        if has_legacy_datasets || [ "${_type}" = "DB" ] || [ "${_type}" = "TMPVAR" ]; then
+            for _rollback in $_rollback_list; do
+                printf "%s\t" "$_rollback (legacy)"
+            done
+        else
+            get_pending_BE
+        fi
         printf "\n"
         continue
     fi
@@ -157,7 +165,7 @@ for _type in ${AVAILABLE_DATASET_TYPES}; do
         fi
         if [ -z "${_snapshot_to_rollback}" ];then
             error_and_exit "[!] Snapshot not found, cannot rollback ${_type} dataset(s)"
-        else
+        elif has_legacy_datasets || [ "${_type}" = "DB" ] || [ "${_type}" = "TMPVAR" ]; then
             _need_restart=1
             tag_snapshots_for_rollback "${_type_datasets}" "${_snapshot_to_rollback}"
         fi

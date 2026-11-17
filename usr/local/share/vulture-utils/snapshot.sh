@@ -26,8 +26,8 @@ usage() {
     echo "	-h	Show this help banner"
     echo "	-A	Snapshot all underlying datasets"
     echo "	-S	Snapshot the system dataset(s)"
-    echo "	-J	Snapshot the jail(s) dataset(s)"
-    echo "	-H	Snapshot the home dataset(s)"
+    echo "	-J	Snapshot the jail(s) dataset(s) (kept for legacy usage)"
+    echo "	-H	Snapshot the home dataset(s) (kept for legacy usage)"
     echo "	-D	Snapshot the databases dataset(s)"
     echo "	-T	Snapshot the tmp/var dataset(s)"
     echo "	-l	Only list datasets"
@@ -44,17 +44,21 @@ fi
 
 while getopts 'hASJDHTlk:d:' opt; do
     case "${opt}" in
-        A)  _snapshot_datasets_list="SYSTEM JAIL DB HOMES TMPVAR";
+        A)  _snapshot_datasets_list="SYSTEM DB TMPVAR";
             snapshot_system=1;
             ;;
         S)  # the system is snapshotted using bectl, and not regular snapshots
             snapshot_system=1;
             ;;
-        J)  _snapshot_datasets_list="${_snapshot_datasets_list} JAIL";
+        J)  if has_legacy_datasets; then
+                _snapshot_datasets_list="${_snapshot_datasets_list} JAIL";
+            fi
             ;;
         D)  _snapshot_datasets_list="${_snapshot_datasets_list} DB";
             ;;
-        H)  _snapshot_datasets_list="${_snapshot_datasets_list} HOMES";
+        H)  if has_legacy_datasets; then
+                _snapshot_datasets_list="${_snapshot_datasets_list} HOMES";
+            fi
             ;;
         T)  _snapshot_datasets_list="${_snapshot_datasets_list} TMPVAR";
             ;;
@@ -88,6 +92,7 @@ finalize() {
 
     if [ "$_mongo_locked" -gt 0 ]; then
         exec_mongo "db.fsyncUnlock()" > /dev/null
+        if [ $? -ne 0 ]; then jexec mongodb service mongod start > /dev/null; fi
         _mongo_locked=0
     fi
 
@@ -124,7 +129,14 @@ elif [ "${delete_snapshot_mode}" -gt 0 ] && [ "$snapshot_system" -gt 0 ]; then
     fi
 elif [ "$snapshot_system" -gt 0 ]; then
     echo "making new snapshot for SYSTEM datasets"
-    /sbin/bectl create "$snap_name"
+    if [ "${_mongo_locked}" -eq 0 ]; then
+        exec_mongo "db.fsyncLock()" > /dev/null
+        if [ $? -ne 0 ]; then jexec mongodb service mongod stop > /dev/null; fi
+        _mongo_locked=1
+    fi
+    /sbin/bectl create -r "$snap_name"
+    # There is a bug where canmount=off is changed to noauto
+    /sbin/zfs set canmount=off "$(get_root_zpool_name)/ROOT/$snap_name/usr"
     if [ "$keep_previous_snap" -ge 0 ]; then
         echo "keeping only $keep_previous_snap version(s) for 'SYSTEM' dataset(s)"
         clean_old_BEs "$keep_previous_snap"
@@ -138,9 +150,15 @@ for _type in ${AVAILABLE_DATASET_TYPES}; do
     # List snapshots
     if [ "${list_snaps}" -gt 0 ]; then
         printf "%s:\t" "${_type}"
-        for _snap in $_snapshot_list; do
-            printf "%s\t" "$_snap"
-        done
+        if has_legacy_datasets || [ "${_type}" = "DB" ] || [ "${_type}" = "TMPVAR" ]; then
+            for _snap in $_snapshot_list; do
+                printf "%s\t" "$_snap"
+            done
+        else
+            for _be in $_be_list; do
+                printf "%s\t" "$_be (BE)"
+            done
+        fi
         printf "\n"
     # Delete snapshots
     elif [ "${delete_snapshot_mode}" -gt 0 ]; then
@@ -158,10 +176,20 @@ for _type in ${AVAILABLE_DATASET_TYPES}; do
         fi
         if [ "${_type}" = "DB" ] && [ "${_mongo_locked}" -eq 0 ]; then
             exec_mongo "db.fsyncLock()" > /dev/null
+            if [ $? -ne 0 ]; then jexec mongodb service mongod stop > /dev/null; fi
             _mongo_locked=1
         fi
-        echo "making new snapshot for ${_type} datasets"
-        snapshot_datasets "$_type_datasets" "$snap_name"
+        # Support renamed jail datasets
+        if has_legacy_datasets || [ "${_type}" = "DB" ] || [ "${_type}" = "TMPVAR" ]; then
+            echo "making new snapshot for ${_type} datasets"
+            snapshot_datasets "$_type_datasets" "$snap_name"
+        else
+            # Jails datasets are now held by Boot Environment
+            if list_inactive_BEs | /usr/bin/grep -q "${snap_name}"; then continue; fi
+            /sbin/bectl create -r "${snap_name}"
+            # There is a bug where canmount=off is changed to noauto
+            /sbin/zfs set canmount=off "$(get_root_zpool_name)/ROOT/$snap_name/usr"
+        fi
         if [ "$keep_previous_snap" -ge 0 ]; then
             echo "keeping only $keep_previous_snap version(s) for '${_type}' dataset(s)"
             clean_previous_snapshots "$_type_datasets" "$keep_previous_snap"
