@@ -94,22 +94,23 @@ update_packages() {
     pkg_env="/usr/bin/env IGNORE_OSVERSION=yes ASSUME_ALWAYS_YES=yes"
     pkg_args="-c $_mnt_temp_dir -o PKG_CACHEDIR=${temp_dir}/var/cache/pkg"
 
-    # Delete me
     # shellcheck disable=SC2086
     $pkg_env /usr/sbin/pkg $pkg_args bootstrap -f || finalize 1 "Could not bootstrap pkg."
 
     info "[+] Upgrading host system packages..."
+    /bin/cp -a "$_mnt_temp_dir/var/cron/tabs/vlt-os" "$_mnt_temp_dir/var/cron/tabs/vlt-os.back"
     # shellcheck disable=SC2086
     $pkg_env /usr/sbin/pkg $pkg_args unlock vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
     # shellcheck disable=SC2086
     $pkg_env /usr/sbin/pkg $pkg_args upgrade -f || finalize 1 "Failed to upgrade packages."
     # shellcheck disable=SC2086
     $pkg_env /usr/sbin/pkg $pkg_args lock vulture-base vulture-gui vulture-haproxy vulture-mongodb vulture-redis vulture-rsyslog
+    /bin/mv "$_mnt_temp_dir/var/cron/tabs/vlt-os.back" "$_mnt_temp_dir/var/cron/tabs/vlt-os"
     info "[-] Done."
 
     info "[+] Cleaning pkg cache..."
     # shellcheck disable=SC2086
-    # $pkg_env /usr/sbin/pkg $pkg_args clean -a Uncomment me
+    $pkg_env /usr/sbin/pkg $pkg_args clean -a
     info "[-] Done."
 
     for jail in $JAILS_LIST; do
@@ -122,7 +123,7 @@ update_packages() {
 
         info "[+] Cleaning $jail pkg cache..."
         # shellcheck disable=SC2086
-        # $pkg_env /usr/sbin/pkg $pkg_args clean -a Uncomment me
+        $pkg_env /usr/sbin/pkg $pkg_args clean -a
         info "[-] Done."
     done
 }
